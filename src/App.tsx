@@ -78,6 +78,13 @@ interface UserAccount {
   dob?: string;
   contact?: string;
   location?: string;
+  educationLevel?: string;
+  workingTrade?: string;
+  gigCategories?: string[];
+  experience?: string[];
+  references?: string[];
+  profileLastUpdated?: string;
+  isLocked?: boolean;
 }
 
 export default function App() {
@@ -192,14 +199,24 @@ export default function App() {
 
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
+  const [showExperienceModal, setShowExperienceModal] = useState<boolean>(false);
+  const [showReferenceModal, setShowReferenceModal] = useState<boolean>(false);
+  const [newExperienceItem, setNewExperienceItem] = useState<string>('');
+  const [newReferenceItem, setNewReferenceItem] = useState<string>('');
   const [editFirstName, setEditFirstName] = useState<string>('');
   const [editLastName, setEditLastName] = useState<string>('');
   const [editDob, setEditDob] = useState<string>('');
   const [editContact, setEditContact] = useState<string>('');
   const [editLocation, setEditLocation] = useState<string>('');
+  const [editEducationLevel, setEditEducationLevel] = useState<string>('');
+  const [editWorkingTrade, setEditWorkingTrade] = useState<string>('');
+  const [editGigCategories, setEditGigCategories] = useState<string[]>([]);
+  const [editExperience, setEditExperience] = useState<string[]>([]);
+  const [editReferences, setEditReferences] = useState<string[]>([]);
 
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string } | null>(null);
+  const [viewingSeekerProfile, setViewingSeekerProfile] = useState<any | null>(null);
 
   // Help Modal State
   const [activeHelp, setActiveHelp] = useState<{ title: string; sections: Array<{ title: string; content: string }> } | null>(null);
@@ -419,6 +436,11 @@ export default function App() {
       setEditDob(user.dob || '');
       setEditContact(user.contact || '');
       setEditLocation(user.location || '');
+      setEditEducationLevel(user.educationLevel || '');
+      setEditWorkingTrade(user.workingTrade || '');
+      setEditGigCategories(user.gigCategories || []);
+      setEditExperience(user.experience || []);
+      setEditReferences(user.references || []);
     }
   }, [currentEmail, registeredUsers, isEditingProfile]);
 
@@ -933,6 +955,24 @@ export default function App() {
       alert('Contact number is required.');
       return;
     }
+    
+    // Validate profile completeness
+    const user = registeredUsers.find(u => u.email === currentEmail);
+    if (!user) return;
+    if (!editExperience || editExperience.length === 0) {
+      alert('At least one experience entry is required.');
+      return;
+    }
+    if (!editReferences || editReferences.length === 0) {
+      alert('At least one reference is required.');
+      return;
+    }
+
+    // Check picture update constraint (once a month)
+    if (user.profileLastUpdated && (new Date().getTime() - new Date(user.profileLastUpdated).getTime() < 30 * 24 * 60 * 60 * 1000)) {
+      alert('Profile picture can only be updated once a month.');
+      return;
+    }
 
     setRegisteredUsers((prev) =>
       prev.map((u) =>
@@ -944,12 +984,19 @@ export default function App() {
               dob: editDob,
               contact: editContact,
               location: editLocation,
+              educationLevel: editEducationLevel,
+              workingTrade: editWorkingTrade,
+              gigCategories: editGigCategories,
+              experience: editExperience,
+              references: editReferences,
+              isLocked: true,
+              profileLastUpdated: new Date().toISOString(),
             }
           : u
       )
     );
     setIsEditingProfile(false);
-    alert('Profile updated successfully!');
+    alert('Profile saved and locked!');
   };
 
   const handleAutoFillLocation = () => {
@@ -993,20 +1040,24 @@ export default function App() {
     }
 
     const existing = registeredUsers.find((u) => u.email === authEmail);
-    if (!existing) {
-      const newAccount: UserAccount = {
-        email: authEmail,
-        password: authPassword,
-        subscriptionState: 'none',
-        selfieImage: null,
-        idDocName: null,
-        popDocName: null,
-        isDisabled: false,
-        isFrozen: false,
-        referredBy: referralCode, // Store referral code at signup
-      };
-      setRegisteredUsers((prev) => [...prev, newAccount]);
+    if (existing) {
+      alert('Email already registered. Please login.');
+      setAuthMode('login');
+      return;
     }
+
+    const newAccount: UserAccount = {
+      email: authEmail,
+      password: authPassword,
+      subscriptionState: 'none',
+      selfieImage: null,
+      idDocName: null,
+      popDocName: null,
+      isDisabled: false,
+      isFrozen: false,
+      referredBy: referralCode, // Store referral code at signup
+    };
+    setRegisteredUsers((prev) => [...prev, newAccount]);
 
     localStorage.setItem('last_auth_email', authEmail);
     localStorage.setItem('last_auth_password', authPassword);
@@ -1734,27 +1785,37 @@ export default function App() {
                 const tenantCount = relevantUsers.filter(u => u.subscriptionState === 'tenant').length;
                 const userCount = relevantUsers.filter(u => u.subscriptionState === 'user').length;
                 
-                const tenantLimit = isMaster ? 1000 : 10;
-                const userLimit = isMaster ? 1000 : 100;
+                const tenantLimit = isMaster ? 1000 : tenantLimitConfig;
+                const userLimit = isMaster ? 1000 : userLimitConfig;
 
                 return (
                   <>
-                    {/* Limit Status Bar */}
-                    <div className="grid grid-cols-2 gap-3 mb-2">
-                      <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex flex-col items-center">
-                        <span className="text-[9px] font-bold text-emerald-600 uppercase">Tenant Referrals</span>
-                        <div className="text-lg font-black text-emerald-800">{tenantCount} / {tenantLimit}</div>
-                        <div className="w-full bg-emerald-200 h-1 rounded-full mt-1 overflow-hidden">
-                          <div className="bg-emerald-600 h-full transition-all" style={{ width: `${Math.min((tenantCount/tenantLimit)*100, 100)}%` }} />
-                        </div>
-                      </div>
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex flex-col items-center">
-                        <span className="text-[9px] font-bold text-blue-600 uppercase">User Referrals</span>
-                        <div className="text-lg font-black text-blue-800">{userCount} / {userLimit}</div>
-                        <div className="w-full bg-blue-200 h-1 rounded-full mt-1 overflow-hidden">
-                          <div className="bg-blue-600 h-full transition-all" style={{ width: `${Math.min((userCount/userLimit)*100, 100)}%` }} />
-                        </div>
-                      </div>
+                    {/* Stats Display */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                      {isMaster ? (
+                         <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 shadow-sm">
+                           <h4 className="text-xs font-bold text-purple-900 mb-2">Master Tenant Overview</h4>
+                           <div className="text-sm">Total Referrals: {relevantUsers.length}</div>
+                           <div className="text-sm">Total Monthly Profit: R{referrals.reduce((sum, r) => sum + (r.status === 'Approved' ? (r.activatedPlan === 'user' ? userSubFee : tenantSubFee) : 0), 0).toFixed(2)}</div>
+                         </div>
+                      ) : (
+                        <>
+                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex flex-col items-center">
+                            <span className="text-[9px] font-bold text-emerald-600 uppercase">Tenant Referrals</span>
+                            <div className="text-lg font-black text-emerald-800">{tenantCount} / {tenantLimit}</div>
+                            <div className="w-full bg-emerald-200 h-1 rounded-full mt-1 overflow-hidden">
+                              <div className="bg-emerald-600 h-full transition-all" style={{ width: `${Math.min((tenantCount/tenantLimit)*100, 100)}%` }} />
+                            </div>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex flex-col items-center">
+                            <span className="text-[9px] font-bold text-blue-600 uppercase">User Referrals</span>
+                            <div className="text-lg font-black text-blue-800">{userCount} / {userLimit}</div>
+                            <div className="w-full bg-blue-200 h-1 rounded-full mt-1 overflow-hidden">
+                              <div className="bg-blue-600 h-full transition-all" style={{ width: `${Math.min((userCount/userLimit)*100, 100)}%` }} />
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {relevantUsers.length === 0 ? (
@@ -1946,7 +2007,7 @@ export default function App() {
                 { name: 'Lerato Mokoena', role: 'Active User Seeker', location: 'Pretoria, GP', rating: '4.8' },
                 { name: 'David van Der Merwe', role: 'Local Map Seeker', location: 'Cape Town, WC', rating: '5.0' },
               ].map((seeker, idx) => (
-                <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between">
+                <div key={idx} onClick={() => setViewingSeekerProfile(seeker)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer hover:border-blue-300 transition-colors">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                       {seeker.name.split(' ').map(n => n[0]).join('')}
@@ -2039,100 +2100,186 @@ export default function App() {
               </div>
 
               {isEditingProfile ? (
-                <form onSubmit={handleSaveProfile} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">First Name</label>
-                      <input
-                        type="text"
-                        value={editFirstName}
-                        onChange={(e) => setEditFirstName(e.target.value)}
-                        placeholder="e.g. John"
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Surname</label>
-                      <input
-                        type="text"
-                        value={editLastName}
-                        onChange={(e) => setEditLastName(e.target.value)}
-                        placeholder="e.g. Doe"
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Date of Birth</label>
-                      <div className="relative flex items-center">
-                        <Calendar className="absolute left-3 w-4 h-4 text-gray-400" />
-                        <input
-                          type="date"
-                          value={editDob}
-                          onChange={(e) => setEditDob(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Contact Number <span className="text-red-500">*</span></label>
-                      <div className="relative flex items-center">
-                        <Navigation className="absolute left-3 w-4 h-4 text-gray-400" />
-                        <input
-                          type="tel"
-                          required
-                          value={editContact}
-                          onChange={(e) => setEditContact(e.target.value)}
-                          placeholder="+27 12 345 6789"
-                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Location</label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1 flex items-center">
-                        <MapPin className="absolute left-3 w-4 h-4 text-gray-400" />
+                <>
+                  <form onSubmit={handleSaveProfile} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">First Name</label>
                         <input
                           type="text"
-                          value={editLocation}
-                          onChange={(e) => setEditLocation(e.target.value)}
-                          placeholder="Address or coordinates"
-                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                          value={editFirstName}
+                          onChange={(e) => setEditFirstName(e.target.value)}
+                          placeholder="e.g. John"
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                         />
                       </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Surname</label>
+                        <input
+                          type="text"
+                          value={editLastName}
+                          onChange={(e) => setEditLastName(e.target.value)}
+                          placeholder="e.g. Doe"
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Education Level</label>
+                        <select
+                          value={editEducationLevel}
+                          onChange={(e) => setEditEducationLevel(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        >
+                          <option value="">Select Level</option>
+                          <option value="High School">High School</option>
+                          <option value="Diploma">Diploma</option>
+                          <option value="Degree">Degree</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Working Trade</label>
+                        <select
+                          value={editWorkingTrade}
+                          onChange={(e) => setEditWorkingTrade(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        >
+                          <option value="">Select a Trade</option>
+                          {["Electrician", "Plumber", "Carpenter", "Painter", "Gardener", "Cleaner", "Delivery", "Handyman", "Tutor", "Chef/Cook", "Driver", "Tech Support"].map(trade => (
+                            <option key={trade} value={trade}>{trade}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Date of Birth</label>
+                        <div className="relative flex items-center">
+                          <Calendar className="absolute left-3 w-4 h-4 text-gray-400" />
+                          <input
+                            type="date"
+                            value={editDob}
+                            onChange={(e) => setEditDob(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Contact Number <span className="text-red-500">*</span></label>
+                        <div className="relative flex items-center">
+                          <Navigation className="absolute left-3 w-4 h-4 text-gray-400" />
+                          <input
+                            type="tel"
+                            required
+                            value={editContact}
+                            onChange={(e) => setEditContact(e.target.value)}
+                            placeholder="+27 12 345 6789"
+                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Location</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1 flex items-center">
+                          <MapPin className="absolute left-3 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            value={editLocation}
+                            onChange={(e) => setEditLocation(e.target.value)}
+                            placeholder="Address or coordinates"
+                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAutoFillLocation}
+                          className="px-4 py-2.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all flex items-center gap-2 whitespace-nowrap"
+                          title="Set Automatically via GPS"
+                        >
+                          <Locate className="w-4 h-4" /> 
+                          <span className="hidden sm:inline">Auto-fill</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="submit"
+                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all"
+                      >
+                        Save Profile Changes
+                      </button>
                       <button
                         type="button"
-                        onClick={handleAutoFillLocation}
-                        className="px-4 py-2.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all flex items-center gap-2 whitespace-nowrap"
-                        title="Set Automatically via GPS"
+                        onClick={() => setIsEditingProfile(false)}
+                        className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-all"
                       >
-                        <Locate className="w-4 h-4" /> 
-                        <span className="hidden sm:inline">Auto-fill</span>
+                        Cancel
                       </button>
                     </div>
-                  </div>
+                  </form>
 
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="submit"
-                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all"
-                    >
-                      Save Profile Changes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingProfile(false)}
-                      className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-all"
-                    >
-                      Cancel
-                    </button>
+                  {/* Experience Modal */}
+                  {showExperienceModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                      <div className="bg-white p-6 rounded-2xl w-full max-w-sm space-y-4">
+                        <h3 className="font-bold text-lg">Add Experience</h3>
+                        <input
+                          type="text"
+                          value={newExperienceItem}
+                          onChange={(e) => setNewExperienceItem(e.target.value)}
+                          placeholder="e.g. 2 years as a painter"
+                          className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-xs"
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={() => {
+                            if (newExperienceItem.trim()) {
+                              setEditExperience([...editExperience, newExperienceItem]);
+                              setNewExperienceItem('');
+                              setShowExperienceModal(false);
+                            }
+                          }} className="flex-1 py-2 bg-blue-600 text-white rounded-xl">Add</button>
+                          <button onClick={() => setShowExperienceModal(false)} className="flex-1 py-2 bg-gray-200 rounded-xl">Cancel</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Reference Modal */}
+                  {showReferenceModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                      <div className="bg-white p-6 rounded-2xl w-full max-w-sm space-y-4">
+                        <h3 className="font-bold text-lg">Add Reference</h3>
+                        <input
+                          type="text"
+                          value={newReferenceItem}
+                          onChange={(e) => setNewReferenceItem(e.target.value)}
+                          placeholder="e.g. John Doe, 012 345 6789"
+                          className="w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-xs"
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={() => {
+                            if (newReferenceItem.trim()) {
+                              setEditReferences([...editReferences, newReferenceItem]);
+                              setNewReferenceItem('');
+                              setShowReferenceModal(false);
+                            }
+                          }} className="flex-1 py-2 bg-blue-600 text-white rounded-xl">Add</button>
+                          <button onClick={() => setShowReferenceModal(false)} className="flex-1 py-2 bg-gray-200 rounded-xl">Cancel</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-2 pt-4">
+                    <button type="button" onClick={() => setShowExperienceModal(true)} className="w-full py-2 bg-gray-100 rounded-lg text-xs font-bold">+ Add Experience ({editExperience.length})</button>
+                    <button type="button" onClick={() => setShowReferenceModal(true)} className="w-full py-2 bg-gray-100 rounded-lg text-xs font-bold">+ Add Reference ({editReferences.length})</button>
                   </div>
-                </form>
+                </>
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -2769,6 +2916,26 @@ export default function App() {
           <div className="relative z-10 text-blue-600 text-7xl font-black tracking-tighter drop-shadow-sm animate-pulse flex flex-col items-center">
             <span>TimeGiG</span>
             <div className="h-1 w-24 bg-blue-600 rounded-full mt-2 opacity-20" />
+          </div>
+        </div>
+      )}
+      {viewingSeekerProfile && (
+        <div className="fixed inset-0 z-[110] bg-white/90 backdrop-blur-sm p-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-gray-100 relative">
+            <button onClick={() => setViewingSeekerProfile(null)} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-gray-200">
+              <X className="w-5 h-5"/>
+            </button>
+            <div className="flex flex-col items-center">
+              <div className="w-24 h-24 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-3xl shadow-md">
+                {viewingSeekerProfile.name.split(' ').map((n: string) => n[0]).join('')}
+              </div>
+              <h2 className="text-xl font-bold mt-4 text-gray-900">{viewingSeekerProfile.name}</h2>
+              <p className="text-gray-500 text-sm">{viewingSeekerProfile.role}</p>
+              <p className="text-gray-400 text-xs mt-1">{viewingSeekerProfile.location}</p>
+              <div className="mt-4 px-4 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl">
+                ★ {viewingSeekerProfile.rating}
+              </div>
+            </div>
           </div>
         </div>
       )}
