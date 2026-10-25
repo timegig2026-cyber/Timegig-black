@@ -56,6 +56,7 @@ interface Referral {
   activatedPlan: 'user' | 'tenant';
   expiryDate: string;
   isFrozen: boolean;
+  referrerEmail: string;
 }
 
 interface UserAccount {
@@ -67,6 +68,7 @@ interface UserAccount {
   popDocName: string | null;
   isDisabled: boolean;
   isFrozen: boolean;
+  referredBy: string | null;
 }
 
 export default function App() {
@@ -159,43 +161,13 @@ export default function App() {
   });
 
   const [showReferralsModal, setShowReferralsModal] = useState<boolean>(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Smooth background music for Activation screen
-  useEffect(() => {
-    if (showActivationModal && activationStep === 'plan') {
-      if (!audioRef.current) {
-        // Using a stable direct MP3 link for ambient music
-        audioRef.current = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-17.mp3');
-        audioRef.current.loop = true;
-        audioRef.current.volume = 0.3;
-      }
-      
-      const playAudio = () => {
-        audioRef.current?.play().catch((err) => {
-          console.warn('Audio playback delayed or blocked:', err);
-          // Retry on next user interaction if blocked
-          window.addEventListener('click', () => audioRef.current?.play(), { once: true });
-        });
-      };
+  // Derive a stable referral code from email to track referrers reliably
+  const getReferralCode = (email: string) => {
+    return `tenant_${btoa(email).substring(0, 12).replace(/=/g, '')}`;
+  };
 
-      playAudio();
-    } else {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-    }
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-    };
-  }, [showActivationModal, activationStep]);
-
-  const tenantReferralLink = `${window.location.origin}/?ref=tenant_${Math.abs(Math.sin(Date.now()))
-    .toString(36)
-    .substring(2, 9)}`;
+  const tenantReferralLink = `${window.location.origin}/?ref=${getReferralCode(currentEmail)}`;
 
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -277,6 +249,22 @@ export default function App() {
       }, 50);
     }
   }, [activeView]);
+
+  // Calculate profits based on approved referrals
+  useEffect(() => {
+    const relevantReferrals = currentEmail === 'timegig2026@gmail.com' 
+      ? referrals 
+      : referrals.filter(r => r.referrerEmail === currentEmail);
+    
+    const approved = relevantReferrals.filter(r => r.status === 'Approved');
+    
+    // Example profit: R10 per user sub, R100 per tenant sub
+    const userProfit = approved.filter(r => r.activatedPlan === 'user').length * 10;
+    const tenantProfit = approved.filter(r => r.activatedPlan === 'tenant').length * 100;
+    
+    setUserSubProfit(userProfit);
+    setTenantSubProfit(tenantProfit);
+  }, [referrals, currentEmail]);
 
   // Effect to initialize map
   useEffect(() => {
@@ -615,36 +603,6 @@ export default function App() {
     setIsCameraActive(false);
   };
 
-  // Web Audio API realistic success chime
-  const playSuccessSound = () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof window.AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-
-      const notes = [523.25, 659.25, 783.99, 1046.5];
-      notes.forEach((freq, index) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + index * 0.08);
-
-        gain.gain.setValueAtTime(0, ctx.currentTime + index * 0.08);
-        gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + index * 0.08 + 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.08 + 0.7);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(ctx.currentTime + index * 0.08);
-        osc.stop(ctx.currentTime + index * 0.08 + 0.7);
-      });
-    } catch (e) {
-      console.warn('Audio playback error:', e);
-    }
-  };
-
   const handleFinalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -664,6 +622,30 @@ export default function App() {
     setActivationStep('loading');
 
     setTimeout(() => {
+      // Find referrer by the code
+      const referrer = registeredUsers.find(u => getReferralCode(u.email) === referralCode);
+      const referrerEmail = referrer ? referrer.email : 'direct';
+
+      // Check limits
+      const isMasterTenant = referrerEmail === 'timegig2026@gmail.com';
+      const tenantLimit = isMasterTenant ? 1000 : 10;
+      const userLimit = isMasterTenant ? 1000 : 100;
+
+      const currentReferrals = referrals.filter(r => r.referrerEmail === referrerEmail);
+      const currentTenantCount = currentReferrals.filter(r => r.activatedPlan === 'tenant').length;
+      const currentUserCount = currentReferrals.filter(r => r.activatedPlan === 'user').length;
+
+      if (selectedPlan === 'tenant' && currentTenantCount >= tenantLimit) {
+        alert(`Referral limit reached for Tenant subscriptions (${tenantLimit}).`);
+        setActivationStep('plan');
+        return;
+      }
+      if (selectedPlan === 'user' && currentUserCount >= userLimit) {
+        alert(`Referral limit reached for User subscriptions (${userLimit}).`);
+        setActivationStep('plan');
+        return;
+      }
+
       setSubscriptionState(selectedPlan);
       
       const today = new Date();
@@ -682,12 +664,12 @@ export default function App() {
         activatedPlan: selectedPlan,
         expiryDate: thirtyDaysLater.toISOString().split('T')[0],
         isFrozen: false,
+        referrerEmail: referrerEmail,
       };
 
       setReferrals((prev) => [newReferral, ...prev]);
       
       setActivationStep('success');
-      playSuccessSound();
     }, 3000);
   };
 
@@ -759,6 +741,7 @@ export default function App() {
         popDocName: null,
         isDisabled: false,
         isFrozen: false,
+        referredBy: referralCode, // Store referral code at signup
       };
       setRegisteredUsers((prev) => [...prev, newAccount]);
     }
@@ -766,7 +749,6 @@ export default function App() {
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
     setPopupMessage({ type: 'congrats', text: 'Congratulations! Your account has been successfully created.' });
-    playSuccessSound();
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -794,7 +776,6 @@ export default function App() {
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
     setPopupMessage({ type: 'welcome', text: `Welcome Back, ${authEmail || 'User'}!` });
-    playSuccessSound();
   };
 
   const handleUpdateReferralStatus = (id: string, status: 'Approved' | 'Rejected') => {
@@ -1149,7 +1130,9 @@ export default function App() {
                   <span className="text-[9px] font-semibold uppercase group-hover:text-blue-600 transition-colors">Total Referrals</span>
                   <Users className="w-3.5 h-3.5 text-blue-600" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">{referrals.length}</h3>
+                <h3 className="text-lg font-bold text-gray-900">
+                  {currentEmail === 'timegig2026@gmail.com' ? referrals.length : referrals.filter(r => r.referrerEmail === currentEmail).length}
+                </h3>
                 <p className="text-[9px] text-blue-600 mt-0.5 underline">View, Approve & Reject</p>
               </div>
 
@@ -1198,11 +1181,11 @@ export default function App() {
             </div>
 
             <div className="p-4 overflow-y-auto space-y-4 flex-1">
-              {referrals.length === 0 ? (
+              {(currentEmail === 'timegig2026@gmail.com' ? referrals : referrals.filter(r => r.referrerEmail === currentEmail)).length === 0 ? (
                 <div className="text-center py-8 text-gray-500 text-xs">No referrals found yet.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {referrals.map((ref) => (
+                  {(currentEmail === 'timegig2026@gmail.com' ? referrals : referrals.filter(r => r.referrerEmail === currentEmail)).map((ref) => (
                     <div
                       key={ref.id}
                       className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:shadow-md transition-all"
@@ -1271,32 +1254,34 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                        <button
-                          onClick={() => handleToggleFreezeReferral(ref.id)}
-                          className={`px-3 py-1.5 font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1 ${
-                            ref.isFrozen 
-                              ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                          title={ref.isFrozen ? 'Unfreeze Account' : 'Freeze Account'}
-                        >
-                          {ref.isFrozen ? <RefreshCw className="w-3.5 h-3.5" /> : <Snowflake className="w-3.5 h-3.5" />}
-                          {ref.isFrozen ? 'Unfreeze' : 'Freeze'}
-                        </button>
-                        <button
-                          onClick={() => handleUpdateReferralStatus(ref.id, 'Approved')}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" /> Approve
-                        </button>
-                        <button
-                          onClick={() => handleUpdateReferralStatus(ref.id, 'Rejected')}
-                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Reject
-                        </button>
-                      </div>
+                        {currentEmail === 'timegig2026@gmail.com' && (
+                          <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                            <button
+                              onClick={() => handleToggleFreezeReferral(ref.id)}
+                              className={`px-3 py-1.5 font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1 ${
+                                ref.isFrozen 
+                                  ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                              title={ref.isFrozen ? 'Unfreeze Account' : 'Freeze Account'}
+                            >
+                              {ref.isFrozen ? <RefreshCw className="w-3.5 h-3.5" /> : <Snowflake className="w-3.5 h-3.5" />}
+                              {ref.isFrozen ? 'Unfreeze' : 'Freeze'}
+                            </button>
+                            <button
+                              onClick={() => handleUpdateReferralStatus(ref.id, 'Approved')}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" /> Approve
+                            </button>
+                            <button
+                              onClick={() => handleUpdateReferralStatus(ref.id, 'Rejected')}
+                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1"
+                            >
+                              <XCircle className="w-3.5 h-3.5" /> Reject
+                            </button>
+                          </div>
+                        )}
                     </div>
                   ))}
                 </div>
