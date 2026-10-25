@@ -42,7 +42,8 @@ import {
   Snowflake,
   PowerOff,
   Calendar,
-  Clock
+  Clock,
+  HelpCircle
 } from 'lucide-react';
 
 interface Referral {
@@ -179,12 +180,73 @@ export default function App() {
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string } | null>(null);
 
+  // Help Modal State
+  const [activeHelp, setActiveHelp] = useState<{ title: string; sections: Array<{ title: string; content: string }> } | null>(null);
+
+  const helpContent = {
+    auth: {
+      title: "Welcome to TimeGiG",
+      sections: [
+        { title: "What is TimeGiG?", content: "TimeGiG is a map-centric platform designed to connect gig seekers with local opportunities. Whether you're looking for work or looking to hire, TimeGiG provides a verified, real-time map of active users in South Africa." },
+        { title: "Getting Started", content: "Create an account or log in to access the interactive map. Once authenticated, you can explore the area, search for specific locations, and activate your subscription to unlock professional features." }
+      ]
+    },
+    map: {
+      title: "How to use the Map",
+      sections: [
+        { title: "Navigation", content: "Use the search bar at the top to find specific streets, towns, or provinces. The map supports both standard street view and satellite imagery (toggle via the layers icon)." },
+        { title: "Your Location", content: "The blue pulsing dot indicates your real-time GPS position. Use the 'Recenter' button (target icon) to snap the map back to your current location." },
+        { title: "Seekers & Gigs", content: "Active service providers and gig opportunities appear as markers on the map. Click them to view details or navigate to their location." }
+      ]
+    },
+    tenant: {
+      title: "Tenant Portal Guide",
+      sections: [
+        { title: "Passive Income", content: "As a Tenant, you earn the monthly subscription fees set in your portal for every User and Tenant joined through your unique referral link." },
+        { title: "Dynamic Fees", content: "You have the power to set your own subscription rates! Use the 'Network Settings' panel to adjust what your referrals pay for User and Tenant subs." },
+        { title: "Referral Management", content: "The 'Total Referrals' section shows everyone who signed up using your link. You are responsible for reviewing their KYC documents and approving their access." }
+      ]
+    },
+    seekers: {
+      title: "Seekers Directory",
+      sections: [
+        { title: "Verified Professionals", content: "This list shows active users and tenants in your area. Use this directory to find trusted service providers for your specific needs." },
+        { title: "Ratings & Trust", content: "Every seeker has a star rating based on their previous performance. Look for 'Verified' badges to ensure you're connecting with legitimate users." }
+      ]
+    },
+    profile: {
+      title: "Account & Profile",
+      sections: [
+        { title: "Managing Subscription", content: "Your profile displays your current plan and verification status. You can upgrade or change your subscription at any time using the 'Upgrade' button." },
+        { title: "Account Control", content: "If you need to take a break, you can 'Disable' your account. If you want to start fresh or troubleshoot, use the 'Reset App' button to clear local data." }
+      ]
+    },
+    activation: {
+      title: "Activation & KYC",
+      sections: [
+        { title: "Why KYC?", content: "Know Your Customer (KYC) is required to ensure a safe community. We verify your identity via a selfie and ID document to prevent fraud and protect all users." },
+        { title: "Payment Verification", content: "After choosing a plan, you must upload your Proof of Payment. A tenant will review your documents and approve your account within 24-48 hours." }
+      ]
+    }
+  };
+
   // Referral Limits (Settable by Master Tenant)
   const [tenantLimitConfig, setTenantLimitConfig] = useState<number>(() => {
     return Number(localStorage.getItem('tenant_limit_config')) || 10;
   });
   const [userLimitConfig, setUserLimitConfig] = useState<number>(() => {
     return Number(localStorage.getItem('user_limit_config')) || 100;
+  });
+
+  // Dynamic Subscription Fees (Settable by each Tenant for their referrals)
+  // Default values: User R29.99, Tenant R299.99
+  const [userSubFee, setUserSubFee] = useState<number>(() => {
+    const saved = localStorage.getItem(`user_fee_${currentEmail}`);
+    return saved ? Number(saved) : 29.99;
+  });
+  const [tenantSubFee, setTenantSubFee] = useState<number>(() => {
+    const saved = localStorage.getItem(`tenant_fee_${currentEmail}`);
+    return saved ? Number(saved) : 299.99;
   });
 
   useEffect(() => {
@@ -194,6 +256,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('user_limit_config', userLimitConfig.toString());
   }, [userLimitConfig]);
+
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`user_fee_${currentEmail}`, userSubFee.toString());
+    }
+  }, [userSubFee, currentEmail]);
+
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`tenant_fee_${currentEmail}`, tenantSubFee.toString());
+    }
+  }, [tenantSubFee, currentEmail]);
 
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
@@ -848,8 +922,16 @@ export default function App() {
         {/* Smaller Signup / Login Card on top */}
         <div className="relative z-10 w-11/12 max-w-sm bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-gray-200/80 p-6 space-y-5 animate-in fade-in zoom-in duration-300">
           <div className="text-center space-y-1">
-            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-md">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-md relative group">
               <ShieldCheck className="w-6 h-6" />
+              <button 
+                type="button"
+                onClick={() => setActiveHelp(helpContent.auth)}
+                className="absolute -top-2 -right-2 p-1.5 bg-white text-blue-600 rounded-full shadow-md border border-gray-100 hover:scale-110 transition-transform"
+                title="Help"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+              </button>
             </div>
             <h1 className="text-xl font-extrabold text-gray-900">
               {authMode === 'signup' ? 'Create Account' : 'Welcome Back'}
@@ -1077,38 +1159,48 @@ export default function App() {
                 if (searchSuggestions.length > 0) setShowSuggestions(true);
               }}
               placeholder="Search area, street, location, province..."
-              className="w-full pl-12 pr-10 py-3.5 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-200 text-gray-900 text-sm md:text-base placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-md transition-all"
+              className="w-full pl-12 pr-20 py-3.5 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-200 text-gray-900 text-sm md:text-base placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-md transition-all"
             />
-            {searchQuery ? (
+            <div className="absolute right-4 flex items-center gap-1.5">
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchSuggestions([]);
+                    setShowSuggestions(false);
+                    if (searchMarkerRef.current && mapRef.current) {
+                      mapRef.current.removeLayer(searchMarkerRef.current);
+                      searchMarkerRef.current = null;
+                    }
+                  }}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              ) : locationName && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (position && mapRef.current) {
+                      handleSelectLocation(position.lat.toString(), position.lng.toString(), locationName);
+                    }
+                  }}
+                  className="text-blue-600 hover:text-blue-700 p-1 flex items-center gap-1"
+                  title="Use Current Location"
+                >
+                  <MapPin className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchSuggestions([]);
-                  setShowSuggestions(false);
-                  if (searchMarkerRef.current && mapRef.current) {
-                    mapRef.current.removeLayer(searchMarkerRef.current);
-                    searchMarkerRef.current = null;
-                  }
-                }}
-                className="absolute right-4 text-gray-400 hover:text-gray-600 p-1"
+                onClick={() => setActiveHelp(helpContent.map)}
+                className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                title="Help"
               >
-                <X className="w-4 h-4" />
+                <HelpCircle className="w-4 h-4" />
               </button>
-            ) : locationName && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (position && mapRef.current) {
-                    handleSelectLocation(position.lat.toString(), position.lng.toString(), locationName);
-                  }
-                }}
-                className="absolute right-4 text-blue-600 hover:text-blue-700 p-1 flex items-center gap-1"
-                title="Use Current Location"
-              >
-                <MapPin className="w-4 h-4" />
-              </button>
-            )}
+            </div>
 
             {showSuggestions && searchSuggestions.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-md rounded-xl border border-gray-200 shadow-xl overflow-hidden z-30 max-h-64 overflow-y-auto">
@@ -1205,9 +1297,18 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded-full shadow-sm flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> Verified
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveHelp(helpContent.tenant)}
+                  className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors shadow-sm"
+                  title="Help Guide"
+                >
+                  <HelpCircle className="w-5 h-5" />
+                </button>
+                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded-full shadow-sm flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> Verified
+                </span>
+              </div>
             </div>
 
             {/* Referral Link Card */}
@@ -1273,42 +1374,72 @@ export default function App() {
               </div>
             </div>
 
-            {/* Master Tenant Configuration (Limits) */}
-            {currentEmail === 'timegig2026@gmail.com' && (
+            {/* Tenant Configuration (Limits & Fees) */}
+            {subscriptionState === 'tenant' && (
               <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Wrench className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-sm font-bold text-gray-900">Referral System Configuration</h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-bold text-gray-900">
+                      {currentEmail === 'timegig2026@gmail.com' ? 'System Configuration' : 'Network Settings'}
+                    </h3>
+                  </div>
+                  <span className="text-[10px] text-gray-400 italic">Settings for your referrals</span>
                 </div>
+
                 <div className="grid grid-cols-2 gap-4">
+                  {/* Fees Configuration */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Tenant Referral Limit</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={tenantLimitConfig}
-                        onChange={(e) => setTenantLimitConfig(Number(e.target.value))}
-                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <p className="text-[9px] text-gray-400">Max tenants a referral can invite</p>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Referral User Fee (R)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={userSubFee}
+                      onChange={(e) => setUserSubFee(Number(e.target.value))}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">User Referral Limit</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={userLimitConfig}
-                        onChange={(e) => setUserLimitConfig(Number(e.target.value))}
-                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <p className="text-[9px] text-gray-400">Max users a referral can invite</p>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Referral Tenant Fee (R)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={tenantSubFee}
+                      onChange={(e) => setTenantSubFee(Number(e.target.value))}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
                   </div>
+
+                  {/* Limits Configuration (Master Only) */}
+                  {currentEmail === 'timegig2026@gmail.com' && (
+                    <>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Global Tenant Limit</label>
+                        <input
+                          type="number"
+                          value={tenantLimitConfig}
+                          onChange={(e) => setTenantLimitConfig(Number(e.target.value))}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Global User Limit</label>
+                        <input
+                          type="number"
+                          value={userLimitConfig}
+                          onChange={(e) => setUserLimitConfig(Number(e.target.value))}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
+
                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                   <p className="text-[10px] text-blue-700 leading-relaxed font-medium">
-                    <span className="font-bold">Note:</span> These limits apply to all Tenants except the Master Tenant (timegig2026@gmail.com), who has a fixed limit of 1,000 for both.
+                    <span className="font-bold">Info:</span> {currentEmail === 'timegig2026@gmail.com' 
+                      ? 'You can set global referral limits and manage your network fees. These fees are what your direct referrals will pay.'
+                      : 'Set the monthly subscription fees for users and tenants who join via your link. These are your passive income sources.'}
                   </p>
                 </div>
               </div>
@@ -1518,8 +1649,17 @@ export default function App() {
                 <h1 className="text-2xl font-extrabold text-gray-900">Seekers Directory</h1>
                 <p className="text-sm text-gray-500">Find active service providers, verified tenants, and seekers in your area</p>
               </div>
-              <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl">
-                <Users className="w-6 h-6" />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveHelp(helpContent.seekers)}
+                  className="p-3 bg-blue-100 text-blue-600 rounded-2xl hover:bg-blue-200 transition-colors shadow-md"
+                  title="Directory Help"
+                >
+                  <HelpCircle className="w-6 h-6" />
+                </button>
+                <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl">
+                  <Users className="w-6 h-6" />
+                </div>
               </div>
             </div>
 
@@ -1580,14 +1720,23 @@ export default function App() {
                   <p className="text-xs text-gray-400 mt-1">ID & KYC Verified successfully</p>
                 </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl transition-all shadow-sm flex items-center gap-2 font-semibold text-xs"
-                title="Logout"
-              >
-                <LogOut className="w-5 h-5" />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setActiveHelp(helpContent.profile)}
+                    className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors shadow-sm"
+                    title="Profile Help"
+                  >
+                    <HelpCircle className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl transition-all shadow-sm flex items-center gap-2 font-semibold text-xs"
+                    title="Logout"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    <span className="hidden sm:inline">Logout</span>
+                  </button>
+                </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
@@ -1751,91 +1900,118 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              {activationStep !== 'loading' && (
-                <button
-                  onClick={() => {
-                    setShowActivationModal(false);
-                    stopCamera();
-                  }}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {activationStep !== 'loading' && (
+                  <button
+                    onClick={() => setActiveHelp(helpContent.activation)}
+                    className="p-2 text-blue-600 hover:text-blue-700 rounded-full hover:bg-blue-50 transition-colors"
+                    title="Activation Help"
+                  >
+                    <HelpCircle className="w-6 h-6" />
+                  </button>
+                )}
+                {activationStep !== 'loading' && (
+                  <button
+                    onClick={() => {
+                      setShowActivationModal(false);
+                      stopCamera();
+                    }}
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Modal Body */}
             <div className="p-6 max-h-[80vh] overflow-y-auto">
-              {activationStep === 'plan' && (
-                <div className="space-y-6">
-                  <p className="text-sm text-gray-600">
-                    Please select one subscription plan below to proceed with account activation:
-                  </p>
+              {activationStep === 'plan' && (() => {
+                // Determine fees based on referrer's settings
+                const referrer = registeredUsers.find(u => getReferralCode(u.email) === referralCode);
+                const referrerEmail = referrer ? referrer.email : 'timegig2026@gmail.com';
+                
+                const activeUserFee = localStorage.getItem(`user_fee_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? '29.99' : '29.99');
+                const activeTenantFee = localStorage.getItem(`tenant_fee_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? '299.99' : '299.99');
 
-                  <div className="grid grid-cols-1 gap-4">
-                    {/* User Sub Box */}
-                    <div
-                      onClick={() => setSelectedPlan('user')}
-                      className={`cursor-pointer rounded-2xl border-2 p-5 transition-all flex items-start gap-4 ${
-                        selectedPlan === 'user'
-                          ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
-                          : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="subscription"
-                        checked={selectedPlan === 'user'}
-                        onChange={() => setSelectedPlan('user')}
-                        className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-bold text-gray-900 text-base">User Sub</h3>
-                          <span className="text-blue-600 font-extrabold text-base">R29,99<span className="text-xs text-gray-500 font-normal">/mo</span></span>
+                return (
+                  <div className="space-y-6">
+                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <p className="text-[11px] text-blue-700 leading-tight">
+                        You were referred by <span className="font-bold">{referrerEmail}</span>. The subscription fees below are set by your referring tenant.
+                      </p>
+                    </div>
+
+                    <p className="text-sm text-gray-600">
+                      Please select one subscription plan below to proceed with account activation:
+                    </p>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      {/* User Sub Box */}
+                      <div
+                        onClick={() => setSelectedPlan('user')}
+                        className={`cursor-pointer rounded-2xl border-2 p-5 transition-all flex items-start gap-4 ${
+                          selectedPlan === 'user'
+                            ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="subscription"
+                          checked={selectedPlan === 'user'}
+                          onChange={() => setSelectedPlan('user')}
+                          className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-bold text-gray-900 text-base">User Sub</h3>
+                            <span className="text-blue-600 font-extrabold text-base">R{activeUserFee}<span className="text-xs text-gray-500 font-normal">/mo</span></span>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Full access to use the app and all interactive map navigation features.
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Full access to use the app and all interactive map navigation features.
-                        </p>
+                      </div>
+
+                      {/* Tenant Sub Box */}
+                      <div
+                        onClick={() => setSelectedPlan('tenant')}
+                        className={`cursor-pointer rounded-2xl border-2 p-5 transition-all flex items-start gap-4 ${
+                          selectedPlan === 'tenant'
+                            ? 'border-emerald-600 bg-emerald-50/50 shadow-md ring-2 ring-emerald-500/20'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="subscription"
+                          checked={selectedPlan === 'tenant'}
+                          onChange={() => setSelectedPlan('tenant')}
+                          className="mt-1 w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-bold text-gray-900 text-base">Tenant Sub</h3>
+                            <span className="text-emerald-600 font-extrabold text-base">R{activeTenantFee}<span className="text-xs text-gray-500 font-normal">/mo</span></span>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Become a tenant and earn a passive monthly income from user subscriptions. Keeps your tenant account active.
+                          </p>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Tenant Sub Box */}
-                    <div
-                      onClick={() => setSelectedPlan('tenant')}
-                      className={`cursor-pointer rounded-2xl border-2 p-5 transition-all flex items-start gap-4 ${
-                        selectedPlan === 'tenant'
-                          ? 'border-emerald-600 bg-emerald-50/50 shadow-md ring-2 ring-emerald-500/20'
-                          : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}
+                    <button
+                      onClick={() => setActivationStep('kyc')}
+                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2"
                     >
-                      <input
-                        type="radio"
-                        name="subscription"
-                        checked={selectedPlan === 'tenant'}
-                        onChange={() => setSelectedPlan('tenant')}
-                        className="mt-1 w-4 h-4 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-bold text-gray-900 text-base">Tenant Sub</h3>
-                          <span className="text-emerald-600 font-extrabold text-base">R299,99<span className="text-xs text-gray-500 font-normal">/mo</span></span>
-                        </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Become a tenant and earn a passive monthly income from user subscriptions. Keeps your tenant account active.
-                        </p>
-                      </div>
-                    </div>
+                      <span>Proceed to Verification</span>
+                    </button>
                   </div>
-
-                  <button
-                    onClick={() => setActivationStep('kyc')}
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span>Proceed to Verification</span>
-                  </button>
-                </div>
-              )}
+                );
+              })()}
 
               {activationStep === 'kyc' && (
                 <form onSubmit={handleFinalSubmit} className="space-y-6">
@@ -2066,6 +2242,42 @@ export default function App() {
             >
               Close Preview
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal Overlay */}
+      {activeHelp && (
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md overflow-hidden flex flex-col">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-blue-600 text-white">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5" />
+                <h3 className="font-bold text-lg">{activeHelp.title}</h3>
+              </div>
+              <button 
+                onClick={() => setActiveHelp(null)}
+                className="p-1.5 hover:bg-white/20 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
+              {activeHelp.sections.map((section, idx) => (
+                <div key={idx} className="space-y-2">
+                  <h4 className="text-sm font-extrabold text-blue-600 uppercase tracking-wider">{section.title}</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed font-medium">{section.content}</p>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button 
+                onClick={() => setActiveHelp(null)}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all"
+              >
+                Got it, thanks!
+              </button>
+            </div>
           </div>
         </div>
       )}
