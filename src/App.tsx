@@ -977,8 +977,62 @@ export default function App() {
     );
   }
 
+  // Access control status
+  const userRefRecord = referrals.find(r => r.email === currentEmail);
+  const isMaster = currentEmail === 'timegig2026@gmail.com';
+  
+  // Status: 'approved' | 'pending' | 'rejected' | 'frozen' | 'none'
+  const accessStatus = isMaster 
+    ? 'approved' 
+    : userRefRecord 
+      ? userRefRecord.isFrozen 
+        ? 'frozen' 
+        : userRefRecord.status.toLowerCase() as 'approved' | 'pending' | 'rejected'
+      : 'none';
+
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden">
+      {/* Access Control Overlay (Blocks use of app until approved) */}
+      {!isMaster && (accessStatus === 'pending' || accessStatus === 'rejected' || accessStatus === 'frozen') && (
+        <div className="fixed inset-0 z-[60] bg-white flex items-center justify-center p-6 text-center animate-in fade-in duration-300">
+          <div className="max-w-sm space-y-6">
+            <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center shadow-lg ${
+              accessStatus === 'pending' ? 'bg-amber-100 text-amber-600' :
+              accessStatus === 'rejected' ? 'bg-red-100 text-red-600' :
+              'bg-blue-100 text-blue-600'
+            }`}>
+              {accessStatus === 'pending' && <Clock className="w-10 h-10 animate-pulse" />}
+              {accessStatus === 'rejected' && <XCircle className="w-10 h-10" />}
+              {accessStatus === 'frozen' && <Snowflake className="w-10 h-10" />}
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+                {accessStatus === 'pending' && 'Awaiting Approval'}
+                {accessStatus === 'rejected' && 'Application Rejected'}
+                {accessStatus === 'frozen' && 'Account Frozen'}
+              </h2>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                {accessStatus === 'pending' && `Hi ${currentEmail}, your subscription is currently pending approval from your referring tenant. Please check back later.`}
+                {accessStatus === 'rejected' && 'Unfortunately, your subscription application has been rejected. Please contact support for more information.'}
+                {accessStatus === 'frozen' && 'Your account has been temporarily frozen. Please contact your administrator to resolve this.'}
+              </p>
+            </div>
+
+            <div className="pt-4 flex flex-col gap-3">
+              <button
+                onClick={handleLogout}
+                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" /> Sign Out
+              </button>
+              {accessStatus === 'pending' && (
+                <p className="text-[10px] text-gray-400 font-medium">Your verification is being processed by the system.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Pop-up congratulations or welcome back */}
       {popupMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
