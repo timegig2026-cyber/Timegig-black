@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background-color: #e5e7eb;
+}
+
+.leaflet-tile {
+  will-change: transform;
+}
+
+/* Hide OpenStreetMap attribution */
+.leaflet-control-attribution {
+  display: none !important;
+}
