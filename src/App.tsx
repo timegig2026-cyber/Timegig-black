@@ -159,6 +159,39 @@ export default function App() {
   });
 
   const [showReferralsModal, setShowReferralsModal] = useState<boolean>(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Smooth background music for Activation screen
+  useEffect(() => {
+    if (showActivationModal && activationStep === 'plan') {
+      if (!audioRef.current) {
+        // Using a stable direct MP3 link for ambient music
+        audioRef.current = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-17.mp3');
+        audioRef.current.loop = true;
+        audioRef.current.volume = 0.3;
+      }
+      
+      const playAudio = () => {
+        audioRef.current?.play().catch((err) => {
+          console.warn('Audio playback delayed or blocked:', err);
+          // Retry on next user interaction if blocked
+          window.addEventListener('click', () => audioRef.current?.play(), { once: true });
+        });
+      };
+
+      playAudio();
+    } else {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+    }
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, [showActivationModal, activationStep]);
 
   const tenantReferralLink = `${window.location.origin}/?ref=tenant_${Math.abs(Math.sin(Date.now()))
     .toString(36)
@@ -252,18 +285,21 @@ export default function App() {
       const map = L.map(authMapContainerRef.current, {
         zoomControl: false,
         attributionControl: false,
+        preferCanvas: true,
       }).setView([20, 0], 2);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '',
         subdomains: ['a', 'b', 'c'],
-        keepBuffer: 16,
+        keepBuffer: 4,
       }).addTo(map);
 
       setTimeout(() => {
-        map.invalidateSize();
-      }, 50);
+        if (authMapContainerRef.current) {
+          map.invalidateSize();
+        }
+      }, 100);
 
       return () => {
         map.remove();
@@ -278,13 +314,14 @@ export default function App() {
 
       const map = L.map(mapContainerRef.current, {
         zoomControl: false,
+        preferCanvas: true,
       }).setView(initialCenter, initialZoom);
 
       const initialTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '',
         subdomains: ['a', 'b', 'c'],
-        keepBuffer: 16,
+        keepBuffer: 4,
         updateWhenIdle: false,
         updateWhenZooming: false,
       }).addTo(map);
@@ -313,7 +350,7 @@ export default function App() {
 
       setTimeout(() => {
         map.invalidateSize();
-      }, 50);
+      }, 100);
 
       return () => {
         if (watchId !== null) {
@@ -323,7 +360,7 @@ export default function App() {
         mapRef.current = null;
       };
     }
-  }, [authMode]);
+  }, [authMode, showSplash]);
 
   const fetchLocationName = async (lat: number, lng: number) => {
     try {
@@ -462,6 +499,8 @@ export default function App() {
     const newLayer = L.tileLayer(newLayerUrl, {
       maxZoom: 19,
       attribution: '',
+      subdomains: ['a', 'b', 'c'],
+      keepBuffer: 4,
     }).addTo(mapRef.current);
 
     tileLayerRef.current = newLayer;
@@ -1056,33 +1095,33 @@ export default function App() {
         <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-4 md:p-6 pb-28">
           <div className="max-w-3xl mx-auto space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 {selfieImage ? (
-                  <img src={selfieImage} alt="Tenant Avatar" className="w-12 h-12 rounded-xl object-cover shadow-sm border-2 border-emerald-500" />
+                  <img src={selfieImage} alt="Tenant Avatar" className="w-10 h-10 rounded-lg object-cover shadow-sm border-2 border-emerald-500" />
                 ) : (
-                  <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg shadow-sm">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base shadow-sm">
                     TP
                   </div>
                 )}
                 <div>
-                  <h1 className="text-xl font-extrabold text-gray-900">Tenant Portal</h1>
-                  <p className="text-xs text-emerald-600 font-semibold">Tenant Sub Active (R299,99/mo)</p>
+                  <h1 className="text-lg font-extrabold text-gray-900">Tenant Portal</h1>
+                  <p className="text-[10px] text-emerald-600 font-semibold leading-tight">Tenant Sub Active (R299,99/mo)</p>
                 </div>
               </div>
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full shadow-sm flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Verified Tenant
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded-full shadow-sm flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> Verified
               </span>
             </div>
 
             {/* Referral Link Card */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-2">
-              <h3 className="text-xs font-bold text-gray-900">Your Tenant Referral Link</h3>
-              <div className="flex items-center gap-2">
+            <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 space-y-1.5">
+              <h3 className="text-[11px] font-bold text-gray-900">Your Tenant Referral Link</h3>
+              <div className="flex items-center gap-1.5">
                 <input
                   type="text"
                   readOnly
                   value={tenantReferralLink}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-[11px] text-gray-700 font-mono select-all"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-[10px] text-gray-700 font-mono select-all"
                 />
                 <button
                   onClick={() => {
@@ -1090,46 +1129,46 @@ export default function App() {
                     setCopiedLink(true);
                     setTimeout(() => setCopiedLink(false), 2000);
                   }}
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 shadow-sm transition-all flex-shrink-0"
+                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 shadow-sm transition-all flex-shrink-0"
                 >
-                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedLink ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                   <span>{copiedLink ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
-              <p className="text-[10px] text-gray-500">Share this link to invite users and grow your referral network.</p>
+              <p className="text-[9px] text-gray-500">Share this link to invite users and grow your referral network.</p>
             </div>
 
             {/* Stats: Total Referrals (Clickable), User Sub Profit, Tenant Sub Profit */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div
                 onClick={() => setShowReferralsModal(true)}
-                className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 cursor-pointer transition-all group"
+                className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 hover:border-blue-500 cursor-pointer transition-all group"
                 title="Click to view all referrals"
               >
-                <div className="flex items-center justify-between text-gray-500 mb-1">
-                  <span className="text-[10px] font-semibold uppercase group-hover:text-blue-600 transition-colors">Total Referrals</span>
-                  <Users className="w-4 h-4 text-blue-600" />
+                <div className="flex items-center justify-between text-gray-500 mb-0.5">
+                  <span className="text-[9px] font-semibold uppercase group-hover:text-blue-600 transition-colors">Total Referrals</span>
+                  <Users className="w-3.5 h-3.5 text-blue-600" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900">{referrals.length}</h3>
-                <p className="text-[10px] text-blue-600 mt-0.5 underline">View, Approve & Reject</p>
+                <h3 className="text-lg font-bold text-gray-900">{referrals.length}</h3>
+                <p className="text-[9px] text-blue-600 mt-0.5 underline">View, Approve & Reject</p>
               </div>
 
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between text-gray-500 mb-1">
-                  <span className="text-[10px] font-semibold uppercase">User Sub Profit</span>
-                  <DollarSign className="w-4 h-4 text-emerald-600" />
+              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="flex items-center justify-between text-gray-500 mb-0.5">
+                  <span className="text-[9px] font-semibold uppercase">User Sub Profit</span>
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900">R {userSubProfit.toFixed(2)}</h3>
-                <p className="text-[10px] text-emerald-600 mt-0.5">From user subscriptions</p>
+                <h3 className="text-lg font-bold text-gray-900">R {userSubProfit.toFixed(2)}</h3>
+                <p className="text-[9px] text-emerald-600 mt-0.5">From user subscriptions</p>
               </div>
 
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between text-gray-500 mb-1">
-                  <span className="text-[10px] font-semibold uppercase">Tenant Sub Profit</span>
-                  <TrendingUp className="w-4 h-4 text-purple-600" />
+              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                <div className="flex items-center justify-between text-gray-500 mb-0.5">
+                  <span className="text-[9px] font-semibold uppercase">Tenant Sub Profit</span>
+                  <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900">R {tenantSubProfit.toFixed(2)}</h3>
-                <p className="text-[10px] text-purple-600 mt-0.5">From tenant referrals</p>
+                <h3 className="text-lg font-bold text-gray-900">R {tenantSubProfit.toFixed(2)}</h3>
+                <p className="text-[9px] text-purple-600 mt-0.5">From tenant referrals</p>
               </div>
             </div>
           </div>
@@ -1140,14 +1179,14 @@ export default function App() {
       {showReferralsModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex flex-col p-2 md:p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-4xl mx-auto my-auto overflow-hidden flex flex-col max-h-[95vh]">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
-                  <Users className="w-5 h-5" />
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center gap-1.5">
+                <div className="p-1 bg-blue-100 text-blue-600 rounded-md">
+                  <Users className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-gray-900">Referrals & KYC Verification</h2>
-                  <p className="text-[10px] text-gray-500">Review email, selfie, ID, and payment status</p>
+                  <h2 className="text-sm font-bold text-gray-900 leading-tight">Referrals & KYC Verification</h2>
+                  <p className="text-[9px] text-gray-500 leading-tight">Review email, selfie, ID, and payment status</p>
                 </div>
               </div>
               <button
