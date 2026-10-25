@@ -209,7 +209,7 @@ export default function App() {
   const [editContact, setEditContact] = useState<string>('');
   const [editLocation, setEditLocation] = useState<string>('');
   const [editEducationLevel, setEditEducationLevel] = useState<string>('');
-  const [editWorkingTrade, setEditWorkingTrade] = useState<string>('');
+  const [editWorkingTrades, setEditWorkingTrades] = useState<string[]>([]);
   const [editGigCategories, setEditGigCategories] = useState<string[]>([]);
   const [editExperience, setEditExperience] = useState<string[]>([]);
   const [editReferences, setEditReferences] = useState<string[]>([]);
@@ -286,6 +286,10 @@ export default function App() {
     const saved = localStorage.getItem(`tenant_fee_${currentEmail}`);
     return saved ? Number(saved) : 299.99;
   });
+  const [trialDays, setTrialDays] = useState<number>(() => {
+    const saved = localStorage.getItem(`trial_days_${currentEmail}`);
+    return saved ? Number(saved) : 30;
+  });
 
   // Bank Details (Settable by each Tenant for their payouts)
   const [bankName, setBankName] = useState<string>(() => {
@@ -309,6 +313,11 @@ export default function App() {
     localStorage.setItem('user_limit_config', userLimitConfig.toString());
   }, [userLimitConfig]);
 
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`trial_days_${currentEmail}`, trialDays.toString());
+    }
+  }, [trialDays, currentEmail]);
   useEffect(() => {
     if (currentEmail) {
       localStorage.setItem(`user_fee_${currentEmail}`, userSubFee.toString());
@@ -437,7 +446,7 @@ export default function App() {
       setEditContact(user.contact || '');
       setEditLocation(user.location || '');
       setEditEducationLevel(user.educationLevel || '');
-      setEditWorkingTrade(user.workingTrade || '');
+      setEditWorkingTrades(user.workingTrades || (user.workingTrade ? [user.workingTrade] : []));
       setEditGigCategories(user.gigCategories || []);
       setEditExperience(user.experience || []);
       setEditReferences(user.references || []);
@@ -817,7 +826,11 @@ export default function App() {
       alert('ID Document is required. Please upload your ID document.');
       return;
     }
-    if (!popFile) {
+    // Referral trial logic: allow skipping POP if trialDays > 0
+    const isReferral = !!referrerEmail;
+    const isTrial = isReferral && trialDays > 0;
+    
+    if (!popFile && !isTrial) {
       alert('Proof of Payment is required. Please upload your proof of payment document.');
       return;
     }
@@ -836,7 +849,7 @@ export default function App() {
 
       const [idDocUrl, popDocUrl] = await Promise.all([
         fileToDataURL(idDocFile),
-        fileToDataURL(popFile)
+        popFile ? fileToDataURL(popFile) : Promise.resolve(null)
       ]);
 
       setTimeout(() => {
@@ -985,7 +998,7 @@ export default function App() {
               contact: editContact,
               location: editLocation,
               educationLevel: editEducationLevel,
-              workingTrade: editWorkingTrade,
+              workingTrades: editWorkingTrades,
               gigCategories: editGigCategories,
               experience: editExperience,
               references: editReferences,
@@ -1644,6 +1657,16 @@ export default function App() {
                       )}
                     </div>
                     <div className="relative space-y-1.5">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Free Trial Days</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={trialDays}
+                        onChange={(e) => setTrialDays(Number(e.target.value))}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="relative space-y-1.5">
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Referral Tenant Fee (R)</label>
                       <input
                         type="number"
@@ -2140,17 +2163,26 @@ export default function App() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Working Trade</label>
-                        <select
-                          value={editWorkingTrade}
-                          onChange={(e) => setEditWorkingTrade(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                        >
-                          <option value="">Select a Trade</option>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Working Trades (Select multiple)</label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
                           {["Electrician", "Plumber", "Carpenter", "Painter", "Gardener", "Cleaner", "Delivery", "Handyman", "Tutor", "Chef/Cook", "Driver", "Tech Support"].map(trade => (
-                            <option key={trade} value={trade}>{trade}</option>
+                            <label key={trade} className="flex items-center gap-2 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={editWorkingTrades.includes(trade)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEditWorkingTrades([...editWorkingTrades, trade]);
+                                  } else {
+                                    setEditWorkingTrades(editWorkingTrades.filter(t => t !== trade));
+                                  }
+                                }}
+                                className="rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              {trade}
+                            </label>
                           ))}
-                        </select>
+                        </div>
                       </div>
                     </div>
                     
@@ -2305,6 +2337,26 @@ export default function App() {
                   <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                     <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Location</p>
                     <p className="text-xs font-bold text-gray-900">{editLocation || '-'}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Education Level</p>
+                    <p className="text-xs font-bold text-gray-900">{editEducationLevel || '-'}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Working Trades</p>
+                    <p className="text-xs font-bold text-gray-900">{editWorkingTrades.length > 0 ? editWorkingTrades.join(', ') : '-'}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Experience</p>
+                    <div className="text-xs font-bold text-gray-900 space-y-1">
+                      {editExperience && editExperience.length > 0 ? editExperience.map((exp, i) => <p key={i}>• {exp}</p>) : '-'}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">References</p>
+                    <div className="text-xs font-bold text-gray-900 space-y-1">
+                      {editReferences && editReferences.length > 0 ? editReferences.map((ref, i) => <p key={i}>• {ref}</p>) : '-'}
+                    </div>
                   </div>
                 </div>
               )}
