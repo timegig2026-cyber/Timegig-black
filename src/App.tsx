@@ -50,7 +50,9 @@ interface Referral {
   email: string;
   selfieUrl: string;
   idDocName: string;
+  idDocUrl?: string;
   popDocName: string;
+  popDocUrl?: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   date: string;
   activatedPlan: 'user' | 'tenant';
@@ -173,6 +175,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchSuggestions, setSearchSuggestions] = useState<Array<{ display_name: string; lat: string; lon: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+
+  // Document viewer state
+  const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string } | null>(null);
 
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
@@ -603,7 +608,7 @@ export default function App() {
     setIsCameraActive(false);
   };
 
-  const handleFinalSubmit = (e: React.FormEvent) => {
+  const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selfieImage) {
@@ -621,56 +626,78 @@ export default function App() {
 
     setActivationStep('loading');
 
-    setTimeout(() => {
-      // Find referrer by the code
-      const referrer = registeredUsers.find(u => getReferralCode(u.email) === referralCode);
-      const referrerEmail = referrer ? referrer.email : 'direct';
-
-      // Check limits
-      const isMasterTenant = referrerEmail === 'timegig2026@gmail.com';
-      const tenantLimit = isMasterTenant ? 1000 : 10;
-      const userLimit = isMasterTenant ? 1000 : 100;
-
-      const currentReferrals = referrals.filter(r => r.referrerEmail === referrerEmail);
-      const currentTenantCount = currentReferrals.filter(r => r.activatedPlan === 'tenant').length;
-      const currentUserCount = currentReferrals.filter(r => r.activatedPlan === 'user').length;
-
-      if (selectedPlan === 'tenant' && currentTenantCount >= tenantLimit) {
-        alert(`Referral limit reached for Tenant subscriptions (${tenantLimit}).`);
-        setActivationStep('plan');
-        return;
-      }
-      if (selectedPlan === 'user' && currentUserCount >= userLimit) {
-        alert(`Referral limit reached for User subscriptions (${userLimit}).`);
-        setActivationStep('plan');
-        return;
-      }
-
-      setSubscriptionState(selectedPlan);
-      
-      const today = new Date();
-      const thirtyDaysLater = new Date(today);
-      thirtyDaysLater.setDate(today.getDate() + 30);
-      
-      // If user joined via referral, add them to the referrals list
-      const newReferral: Referral = {
-        id: `ref-${Date.now()}`,
-        email: currentEmail,
-        selfieUrl: selfieImage || '',
-        idDocName: idDocFile?.name || 'document.pdf',
-        popDocName: popFile?.name || 'payment.pdf',
-        status: 'Pending',
-        date: today.toISOString().split('T')[0],
-        activatedPlan: selectedPlan,
-        expiryDate: thirtyDaysLater.toISOString().split('T')[0],
-        isFrozen: false,
-        referrerEmail: referrerEmail,
+    try {
+      const fileToDataURL = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
       };
 
-      setReferrals((prev) => [newReferral, ...prev]);
-      
-      setActivationStep('success');
-    }, 3000);
+      const [idDocUrl, popDocUrl] = await Promise.all([
+        fileToDataURL(idDocFile),
+        fileToDataURL(popFile)
+      ]);
+
+      setTimeout(() => {
+        // Find referrer by the code
+        const referrer = registeredUsers.find(u => getReferralCode(u.email) === referralCode);
+        const referrerEmail = referrer ? referrer.email : 'direct';
+
+        // Check limits
+        const isMasterTenant = referrerEmail === 'timegig2026@gmail.com';
+        const tenantLimit = isMasterTenant ? 1000 : 10;
+        const userLimit = isMasterTenant ? 1000 : 100;
+
+        const currentReferrals = referrals.filter(r => r.referrerEmail === referrerEmail);
+        const currentTenantCount = currentReferrals.filter(r => r.activatedPlan === 'tenant').length;
+        const currentUserCount = currentReferrals.filter(r => r.activatedPlan === 'user').length;
+
+        if (selectedPlan === 'tenant' && currentTenantCount >= tenantLimit) {
+          alert(`Referral limit reached for Tenant subscriptions (${tenantLimit}).`);
+          setActivationStep('plan');
+          return;
+        }
+        if (selectedPlan === 'user' && currentUserCount >= userLimit) {
+          alert(`Referral limit reached for User subscriptions (${userLimit}).`);
+          setActivationStep('plan');
+          return;
+        }
+
+        setSubscriptionState(selectedPlan);
+        
+        const today = new Date();
+        const thirtyDaysLater = new Date(today);
+        thirtyDaysLater.setDate(today.getDate() + 30);
+        
+        // If user joined via referral, add them to the referrals list
+        const newReferral: Referral = {
+          id: `ref-${Date.now()}`,
+          email: currentEmail,
+          selfieUrl: selfieImage || '',
+          idDocName: idDocFile?.name || 'document.pdf',
+          idDocUrl: idDocUrl,
+          popDocName: popFile?.name || 'payment.pdf',
+          popDocUrl: popDocUrl,
+          status: 'Pending',
+          date: today.toISOString().split('T')[0],
+          activatedPlan: selectedPlan,
+          expiryDate: thirtyDaysLater.toISOString().split('T')[0],
+          isFrozen: false,
+          referrerEmail: referrerEmail,
+        };
+
+        setReferrals((prev) => [newReferral, ...prev]);
+        
+        setActivationStep('success');
+      }, 3000);
+    } catch (err) {
+      console.error('Error processing files:', err);
+      alert('Error processing document uploads. Please try again.');
+      setActivationStep('kyc');
+    }
   };
 
   const handleToggleFreezeReferral = (id: string) => {
@@ -1212,7 +1239,9 @@ export default function App() {
                         <img
                           src={ref.selfieUrl}
                           alt="Selfie"
-                          className={`w-12 h-12 rounded-xl object-cover border-2 shadow-sm flex-shrink-0 ${ref.isFrozen ? 'border-blue-300 grayscale' : 'border-blue-500'}`}
+                          onClick={() => setViewingDoc({ url: ref.selfieUrl, title: `Selfie: ${ref.email}` })}
+                          className={`w-12 h-12 rounded-xl object-cover border-2 shadow-sm flex-shrink-0 cursor-pointer hover:scale-105 transition-transform ${ref.isFrozen ? 'border-blue-300 grayscale' : 'border-blue-500'}`}
+                          title="Click to view full selfie"
                         />
                         <div>
                           <div className="flex items-center gap-2">
@@ -1251,9 +1280,15 @@ export default function App() {
                           <FileText className="w-3.5 h-3.5 text-blue-600" />
                           <span className="font-medium truncate max-w-[100px]">{ref.idDocName}</span>
                           <button
-                            onClick={() => alert(`Viewing ID Document: ${ref.idDocName}`)}
+                            onClick={() => {
+                              if (ref.idDocUrl) {
+                                setViewingDoc({ url: ref.idDocUrl, title: `ID Document: ${ref.idDocName}` });
+                              } else {
+                                alert(`ID Document content not available for older referrals: ${ref.idDocName}`);
+                              }
+                            }}
                             className="p-0.5 hover:bg-gray-200 rounded text-blue-600"
-                            title="View ID"
+                            title="View ID Full"
                           >
                             <Eye className="w-3 h-3" />
                           </button>
@@ -1263,9 +1298,15 @@ export default function App() {
                           <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
                           <span className="font-medium truncate max-w-[100px]">{ref.popDocName}</span>
                           <button
-                            onClick={() => alert(`Viewing Proof of Payment: ${ref.popDocName}`)}
+                            onClick={() => {
+                              if (ref.popDocUrl) {
+                                setViewingDoc({ url: ref.popDocUrl, title: `Proof of Payment: ${ref.popDocName}` });
+                              } else {
+                                alert(`POP content not available for older referrals: ${ref.popDocName}`);
+                              }
+                            }}
                             className="p-0.5 hover:bg-gray-200 rounded text-emerald-600"
-                            title="View POP"
+                            title="View POP Full"
                           >
                             <Eye className="w-3 h-3" />
                           </button>
@@ -1656,8 +1697,16 @@ export default function App() {
                     </label>
                     <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-2xl p-4 bg-gray-50">
                       {selfieImage ? (
-                        <div className="relative w-32 h-32 rounded-xl overflow-hidden shadow-md">
-                          <img src={selfieImage} alt="Selfie" className="w-full h-full object-cover" />
+                        <div className="relative w-32 h-32 rounded-xl overflow-hidden shadow-md group">
+                          <img 
+                            src={selfieImage} 
+                            alt="Selfie" 
+                            onClick={() => setViewingDoc({ url: selfieImage, title: 'Your Selfie Preview' })}
+                            className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform" 
+                          />
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            <Eye className="w-6 h-6 text-white" />
+                          </div>
                           <button
                             type="button"
                             onClick={() => setSelfieImage(null)}
@@ -1838,6 +1887,35 @@ export default function App() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* Full Screen Document Viewer */}
+      {viewingDoc && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex flex-col p-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between text-white mb-4">
+            <h3 className="text-lg font-bold truncate max-w-[80%]">{viewingDoc.title}</h3>
+            <button
+              onClick={() => setViewingDoc(null)}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center overflow-hidden">
+            <img
+              src={viewingDoc.url}
+              alt="Document Preview"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={() => setViewingDoc(null)}
+              className="px-8 py-3 bg-white text-black font-bold rounded-xl shadow-lg hover:bg-gray-100 transition-colors"
+            >
+              Close Preview
+            </button>
           </div>
         </div>
       )}
