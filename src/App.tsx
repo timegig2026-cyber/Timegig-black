@@ -934,7 +934,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden pb-20">
+    <div className="relative w-full h-[100dvh] overflow-hidden">
       {/* Pop-up congratulations or welcome back */}
       {popupMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -961,7 +961,7 @@ export default function App() {
       {/* Map View (always active in background) */}
       <div
         ref={mapContainerRef}
-        className="absolute inset-0 z-0 bottom-16"
+        className="absolute inset-0 z-0 bottom-[calc(76px+env(safe-area-inset-bottom))]"
       />
 
       {/* Top Bar: Search Bar & Status (Shown on map and gigs views) */}
@@ -981,7 +981,7 @@ export default function App() {
               placeholder="Search area, street, location, province..."
               className="w-full pl-12 pr-10 py-3.5 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-200 text-gray-900 text-sm md:text-base placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-md transition-all"
             />
-            {searchQuery && (
+            {searchQuery ? (
               <button
                 type="button"
                 onClick={() => {
@@ -996,6 +996,19 @@ export default function App() {
                 className="absolute right-4 text-gray-400 hover:text-gray-600 p-1"
               >
                 <X className="w-4 h-4" />
+              </button>
+            ) : locationName && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (position && mapRef.current) {
+                    handleSelectLocation(position.lat.toString(), position.lng.toString(), locationName);
+                  }
+                }}
+                className="absolute right-4 text-blue-600 hover:text-blue-700 p-1 flex items-center gap-1"
+                title="Use Current Location"
+              >
+                <MapPin className="w-4 h-4" />
               </button>
             )}
 
@@ -1021,7 +1034,7 @@ export default function App() {
             {(status === 'error' || status === 'denied') && <AlertCircle className="w-3.5 h-3.5 text-red-500" />}
             <span className="text-xs text-gray-700 font-medium">
               {status === 'locating' && 'Locating you...'}
-              {status === 'located' && (locationName ? `${locationName}` : position ? `${position.lat.toFixed(3)}, ${position.lng.toFixed(3)}` : 'Location active')}
+              {status === 'located' && (locationName ? `Current Location: ${locationName}` : position ? `Current Location: ${position.lat.toFixed(3)}, ${position.lng.toFixed(3)}` : 'Location active')}
               {status === 'denied' && 'Location permission denied'}
               {status === 'error' && (errorMessage || 'Location unavailable')}
             </span>
@@ -1073,7 +1086,7 @@ export default function App() {
 
       {/* Tenant Portal View */}
       {activeView === 'tenant-portal' && (
-        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-4 md:p-6 pb-28">
+        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-4 md:p-6 pb-[calc(112px+env(safe-area-inset-bottom))]">
           <div className="max-w-3xl mx-auto space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1085,8 +1098,13 @@ export default function App() {
                   </div>
                 )}
                 <div>
-                  <h1 className="text-lg font-extrabold text-gray-900">Tenant Portal</h1>
+                  <h1 className="text-lg font-extrabold text-gray-900 leading-tight">Tenant Portal</h1>
                   <p className="text-[10px] text-emerald-600 font-semibold leading-tight">Tenant Sub Active (R299,99/mo)</p>
+                  {locationName && (
+                    <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5 font-medium">
+                      <MapPin className="w-2.5 h-2.5 text-blue-600" /> {locationName}
+                    </p>
+                  )}
                 </div>
               </div>
               <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded-full shadow-sm flex items-center gap-1">
@@ -1302,7 +1320,7 @@ export default function App() {
 
       {/* Seekers View */}
       {activeView === 'seekers' && (
-        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-6 md:p-10 pb-28">
+        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-6 md:p-10 pb-[calc(112px+env(safe-area-inset-bottom))]">
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1347,7 +1365,7 @@ export default function App() {
 
       {/* Profile View */}
       {activeView === 'profile' && (
-        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-6 md:p-10 pb-28">
+        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-6 md:p-10 pb-[calc(112px+env(safe-area-inset-bottom))]">
           <div className="max-w-2xl mx-auto space-y-6">
             <div className="flex items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
               <div className="flex items-center gap-4">
@@ -1359,11 +1377,16 @@ export default function App() {
                   </div>
                 )}
                 <div>
-                  <h1 className="text-2xl font-extrabold text-gray-900">User Profile</h1>
+                  <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">User Profile</h1>
                   <p className="text-sm font-semibold text-blue-600">
                     {subscriptionState === 'tenant' ? 'Tenant Sub (Active)' : subscriptionState === 'user' ? 'User Sub (Active)' : 'Not Activated'}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">ID & KYC Verified successfully</p>
+                  {locationName && (
+                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1 font-medium">
+                      <MapPin className="w-4 h-4 text-blue-600" /> {locationName}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">ID & KYC Verified successfully</p>
                 </div>
               </div>
               <button
@@ -1430,7 +1453,7 @@ export default function App() {
       )}
 
       {/* Bottom Menu Bar (Docked at the bottom, GiGs icon bigger and other icons smaller, no boxes) */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-200 py-3 px-6 shadow-2xl flex items-center justify-around">
+      <div className="absolute bottom-0 left-0 right-0 z-20 bg-white border-t border-gray-200 pt-3 pb-3 safe-p-bottom px-6 shadow-2xl flex items-center justify-around">
         {subscriptionState === 'tenant' ? (
           // Tenant Sub Activated: TenantPortal (smaller), GiGs (BIGGER), Profile (smaller)
           <>
