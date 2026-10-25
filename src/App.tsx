@@ -179,6 +179,22 @@ export default function App() {
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string } | null>(null);
 
+  // Referral Limits (Settable by Master Tenant)
+  const [tenantLimitConfig, setTenantLimitConfig] = useState<number>(() => {
+    return Number(localStorage.getItem('tenant_limit_config')) || 10;
+  });
+  const [userLimitConfig, setUserLimitConfig] = useState<number>(() => {
+    return Number(localStorage.getItem('user_limit_config')) || 100;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tenant_limit_config', tenantLimitConfig.toString());
+  }, [tenantLimitConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('user_limit_config', userLimitConfig.toString());
+  }, [userLimitConfig]);
+
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
     className: 'custom-user-location-marker',
@@ -648,8 +664,9 @@ export default function App() {
 
         // Check limits
         const isMasterTenant = referrerEmail === 'timegig2026@gmail.com';
-        const tenantLimit = isMasterTenant ? 1000 : 10;
-        const userLimit = isMasterTenant ? 1000 : 100;
+        // Master tenant has 1000/1000 limit, others use the configured limits set by master
+        const tenantLimit = isMasterTenant ? 1000 : tenantLimitConfig;
+        const userLimit = isMasterTenant ? 1000 : userLimitConfig;
 
         const currentReferrals = referrals.filter(r => r.referrerEmail === referrerEmail);
         const currentTenantCount = currentReferrals.filter(r => r.activatedPlan === 'tenant').length;
@@ -1199,6 +1216,47 @@ export default function App() {
                 <p className="text-[9px] text-purple-600 mt-0.5">From tenant referrals</p>
               </div>
             </div>
+
+            {/* Master Tenant Configuration (Limits) */}
+            {currentEmail === 'timegig2026@gmail.com' && (
+              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-sm font-bold text-gray-900">Referral System Configuration</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Tenant Referral Limit</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={tenantLimitConfig}
+                        onChange={(e) => setTenantLimitConfig(Number(e.target.value))}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <p className="text-[9px] text-gray-400">Max tenants a referral can invite</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">User Referral Limit</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={userLimitConfig}
+                        onChange={(e) => setUserLimitConfig(Number(e.target.value))}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <p className="text-[9px] text-gray-400">Max users a referral can invite</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                  <p className="text-[10px] text-blue-700 leading-relaxed font-medium">
+                    <span className="font-bold">Note:</span> These limits apply to all Tenants except the Master Tenant (timegig2026@gmail.com), who has a fixed limit of 1,000 for both.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1313,7 +1371,7 @@ export default function App() {
                         </div>
                       </div>
 
-                        {currentEmail === 'timegig2026@gmail.com' && (
+                        {(currentEmail === 'timegig2026@gmail.com' || subscriptionState === 'tenant') && (
                           <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                             <button
                               onClick={() => handleToggleFreezeReferral(ref.id)}
