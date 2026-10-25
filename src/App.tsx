@@ -73,6 +73,11 @@ interface UserAccount {
   isDisabled: boolean;
   isFrozen: boolean;
   referredBy: string | null;
+  firstName?: string;
+  lastName?: string;
+  dob?: string;
+  contact?: string;
+  location?: string;
 }
 
 export default function App() {
@@ -110,6 +115,7 @@ export default function App() {
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
   const [popupMessage, setPopupMessage] = useState<{ type: 'congrats' | 'welcome'; text: string } | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [isFirstTimeUser, setIsFirstTimeUser] = useState<boolean>(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -183,6 +189,14 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchSuggestions, setSearchSuggestions] = useState<Array<{ display_name: string; lat: string; lon: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+
+  // Profile Edit State
+  const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
+  const [editFirstName, setEditFirstName] = useState<string>('');
+  const [editLastName, setEditLastName] = useState<string>('');
+  const [editDob, setEditDob] = useState<string>('');
+  const [editContact, setEditContact] = useState<string>('');
+  const [editLocation, setEditLocation] = useState<string>('');
 
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string } | null>(null);
@@ -314,6 +328,20 @@ export default function App() {
     }
   }, [branchCode, currentEmail]);
 
+  // Guided Onboarding for new users
+  useEffect(() => {
+    if (isFirstTimeUser && authMode === 'authenticated' && !showSplash) {
+      setShowActivationModal(true);
+      setActivationStep('plan');
+      // Guidance message
+      setPopupMessage({ 
+        type: 'congrats', 
+        text: 'Welcome! Let\'s get your account activated. Please follow the steps to complete your KYC and choose a subscription plan.' 
+      });
+      setIsFirstTimeUser(false); // Reset so it doesn't re-trigger
+    }
+  }, [isFirstTimeUser, authMode, showSplash]);
+
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
     className: 'custom-user-location-marker',
@@ -381,6 +409,19 @@ export default function App() {
     );
   }, [subscriptionState, selfieImage, currentEmail]);
 
+  // Sync profile edit states with current user data
+  useEffect(() => {
+    if (!currentEmail || isEditingProfile) return;
+    const user = registeredUsers.find(u => u.email === currentEmail);
+    if (user) {
+      setEditFirstName(user.firstName || '');
+      setEditLastName(user.lastName || '');
+      setEditDob(user.dob || '');
+      setEditContact(user.contact || '');
+      setEditLocation(user.location || '');
+    }
+  }, [currentEmail, registeredUsers, isEditingProfile]);
+
   // Effect for activeView to invalidate map size instantly and prevent white screen
   useEffect(() => {
     if (mapRef.current) {
@@ -404,7 +445,7 @@ export default function App() {
     
     setUserSubProfit(userProfit);
     setTenantSubProfit(tenantProfit);
-  }, [referrals, currentEmail, userSubFee, tenantSubFee]);
+  }, [referrals, registeredUsers, currentEmail, userSubFee, tenantSubFee]);
 
   // Effect to initialize map
   useEffect(() => {
@@ -886,6 +927,60 @@ export default function App() {
     setCurrentEmail('');
   };
 
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editContact.trim()) {
+      alert('Contact number is required.');
+      return;
+    }
+
+    setRegisteredUsers((prev) =>
+      prev.map((u) =>
+        u.email === currentEmail
+          ? {
+              ...u,
+              firstName: editFirstName,
+              lastName: editLastName,
+              dob: editDob,
+              contact: editContact,
+              location: editLocation,
+            }
+          : u
+      )
+    );
+    setIsEditingProfile(false);
+    alert('Profile updated successfully!');
+  };
+
+  const handleAutoFillLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+          );
+          const data = await response.json();
+          if (data && data.display_name) {
+            setEditLocation(data.display_name);
+          }
+        } catch (err) {
+          console.warn('Reverse geocoding error:', err);
+          setEditLocation(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        }
+      },
+      (err) => {
+        console.error('Auto-fill location error:', err);
+        alert('Unable to retrieve your location. Please enter it manually.');
+      }
+    );
+  };
+
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!authEmail || !authPassword) {
@@ -918,6 +1013,7 @@ export default function App() {
     
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
+    setIsFirstTimeUser(true); // Trigger guidance
     setPopupMessage({ type: 'congrats', text: 'Congratulations! Your account has been successfully created.' });
   };
 
@@ -958,27 +1054,58 @@ export default function App() {
   };
 
 
-  // If user is not authenticated (login or signup screen)
-  if (authMode !== 'authenticated') {
-    return (
-      <div className="relative w-screen h-screen overflow-hidden flex items-center justify-center">
-        {/* Map as background wallpaper */}
-        <div ref={authMapContainerRef} className="absolute inset-0 z-0" />
+  // Access control status
+  const userRefRecord = referrals.find(r => r.email === currentEmail);
+  const isMaster = currentEmail === 'timegig2026@gmail.com';
+  
+  // Status: 'approved' | 'pending' | 'rejected' | 'frozen' | 'none'
+  const accessStatus = isMaster 
+    ? 'approved' 
+    : userRefRecord 
+      ? userRefRecord.isFrozen 
+        ? 'frozen' 
+        : userRefRecord.status.toLowerCase() as 'approved' | 'pending' | 'rejected'
+      : 'none';
 
-        {/* Smaller Signup / Login Card on top */}
-        <div className="relative z-10 w-11/12 max-w-sm bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-gray-200/80 p-6 space-y-5 animate-in fade-in zoom-in duration-300">
+  // Main Return Block
+  return (
+    <div className="relative w-full h-[100dvh] overflow-hidden bg-white">
+      {/* GLOBAL BACKGROUND MAP (The Wallpaper) */}
+      <div className="fixed inset-0 z-0">
+        <div 
+          ref={authMode === 'authenticated' ? mapContainerRef : authMapContainerRef} 
+          className="absolute inset-0 grayscale-[20%]"
+        />
+        {/* Blur overlay for non-map views or auth screens */}
+        {(authMode !== 'authenticated' || activeView !== 'map') && (
+          <div className="absolute inset-0 backdrop-blur-[6px] bg-white/10 z-[1]" />
+        )}
+      </div>
+
+      {/* Auth Screen */}
+      {authMode !== 'authenticated' && (
+        <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
+          {/* Smaller Signup / Login Card on top */}
+          <div className="relative z-10 w-11/12 max-w-sm bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/40 p-6 space-y-5 animate-in fade-in zoom-in duration-300">
           <div className="text-center space-y-1">
-            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-md relative group">
-              <ShieldCheck className="w-6 h-6" />
-              <button 
-                type="button"
-                onClick={() => setActiveHelp(helpContent.auth)}
-                className="absolute -top-2 -right-2 p-1.5 bg-white text-blue-600 rounded-full shadow-md border border-gray-100 hover:scale-110 transition-transform"
-                title="Help"
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {authMode === 'login' ? (
+              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-md relative group">
+                <ShieldCheck className="w-6 h-6" />
+                <button 
+                  type="button"
+                  onClick={() => setActiveHelp(helpContent.auth)}
+                  className="absolute -top-2 -right-2 p-1.5 bg-white text-blue-600 rounded-full shadow-md border border-gray-100 hover:scale-110 transition-transform"
+                  title="Help"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-1 mb-2">
+                <h2 className="text-3xl font-black text-blue-600 tracking-tighter">TimeGiG</h2>
+                <div className="h-0.5 w-12 bg-blue-600 rounded-full opacity-30" />
+              </div>
+            )}
             <h1 className="text-xl font-extrabold text-gray-900">
               {authMode === 'signup' ? 'Create Account' : 'Welcome Back'}
             </h1>
@@ -1114,29 +1241,18 @@ export default function App() {
               </div>
             </form>
           )}
+          </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  // Access control status
-  const userRefRecord = referrals.find(r => r.email === currentEmail);
-  const isMaster = currentEmail === 'timegig2026@gmail.com';
-  
-  // Status: 'approved' | 'pending' | 'rejected' | 'frozen' | 'none'
-  const accessStatus = isMaster 
-    ? 'approved' 
-    : userRefRecord 
-      ? userRefRecord.isFrozen 
-        ? 'frozen' 
-        : userRefRecord.status.toLowerCase() as 'approved' | 'pending' | 'rejected'
-      : 'none';
 
-  return (
-    <div className="relative w-full h-[100dvh] overflow-hidden">
+
+      {/* Main App Content */}
+      {authMode === 'authenticated' && (
+        <div className="relative z-10 w-full h-full flex flex-col">
       {/* Access Control Overlay (Blocks use of app until approved) */}
       {!isMaster && (accessStatus === 'pending' || accessStatus === 'rejected' || accessStatus === 'frozen') && (
-        <div className="fixed inset-0 z-[60] bg-white flex items-center justify-center p-6 text-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-xl flex items-center justify-center p-6 text-center animate-in fade-in duration-300">
           <div className="max-w-sm space-y-6">
             <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center shadow-lg ${
               accessStatus === 'pending' ? 'bg-amber-100 text-amber-600' :
@@ -1177,8 +1293,8 @@ export default function App() {
       )}
       {/* Pop-up congratulations or welcome back */}
       {popupMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-sm p-6 text-center space-y-4 animate-in fade-in zoom-in duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/40 w-full max-w-sm p-6 text-center space-y-4 animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-md">
               <Award className="w-8 h-8 animate-bounce" />
             </div>
@@ -1336,9 +1452,9 @@ export default function App() {
 
       {/* Tenant Portal View */}
       {activeView === 'tenant-portal' && (
-        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-4 md:p-6 pb-[calc(112px+env(safe-area-inset-bottom))]">
+        <div className="absolute inset-0 z-10 bg-transparent overflow-y-auto p-4 md:p-6 pb-[calc(112px+env(safe-area-inset-bottom))]">
           <div className="max-w-3xl mx-auto space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-white/40">
               <div className="flex items-center gap-2">
                 {selfieImage ? (
                   <img src={selfieImage} alt="Tenant Avatar" className="w-10 h-10 rounded-lg object-cover shadow-sm border-2 border-emerald-500" />
@@ -1371,8 +1487,27 @@ export default function App() {
               </div>
             </div>
 
+            {/* Total Profit Balance Card */}
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-6 rounded-2xl shadow-lg border border-emerald-400/20 text-white relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-10 transition-transform group-hover:scale-110">
+                <DollarSign className="w-24 h-24" />
+              </div>
+              <div className="relative z-10 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3" /> Tenant Total Profit Balance
+                    </p>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-black">R {(userSubProfit + tenantSubProfit).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Referral Link Card */}
-            <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 space-y-1.5">
+            <div className="bg-white/80 backdrop-blur-md p-3 rounded-lg shadow-sm border border-white/40 space-y-1.5">
               <h3 className="text-[11px] font-bold text-gray-900">Your Tenant Referral Link</h3>
               <div className="flex items-center gap-1.5">
                 <input
@@ -1396,47 +1531,36 @@ export default function App() {
               <p className="text-[9px] text-gray-500">Share this link to invite users and grow your referral network.</p>
             </div>
 
-            {/* Stats: Total Referrals (Clickable), User Sub Profit, Tenant Sub Profit */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Stats: Total Referrals (Clickable) */}
+            <div className="grid grid-cols-1 gap-3">
               <div
                 onClick={() => setShowReferralsModal(true)}
-                className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 hover:border-blue-500 cursor-pointer transition-all group"
+                className="bg-white/80 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/40 hover:border-blue-500 cursor-pointer transition-all group flex items-center justify-between"
                 title="Click to view all referrals"
               >
-                <div className="flex items-center justify-between text-gray-500 mb-0.5">
-                  <span className="text-[9px] font-semibold uppercase group-hover:text-blue-600 transition-colors">Total Referrals (Signups)</span>
-                  <Users className="w-3.5 h-3.5 text-blue-600" />
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-all">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">Total Network Signups</h3>
+                    <p className="text-xs text-gray-500">Manage KYC, approvals, and activations</p>
+                  </div>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">
-                  {currentEmail === 'timegig2026@gmail.com' 
-                    ? registeredUsers.length - 1 
-                    : registeredUsers.filter(u => u.referredBy === getReferralCode(currentEmail)).length}
-                </h3>
-                <p className="text-[9px] text-blue-600 mt-0.5 underline">View Signups & Activations</p>
-              </div>
-
-              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between text-gray-500 mb-0.5">
-                  <span className="text-[9px] font-semibold uppercase">User Sub Profit</span>
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                <div className="text-right">
+                  <div className="text-2xl font-black text-gray-900">
+                    {currentEmail === 'timegig2026@gmail.com' 
+                      ? registeredUsers.length - 1 
+                      : registeredUsers.filter(u => u.referredBy === getReferralCode(currentEmail)).length}
+                  </div>
+                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter">View Details</p>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">R {userSubProfit.toFixed(2)}</h3>
-                <p className="text-[9px] text-emerald-600 mt-0.5">From user subscriptions</p>
-              </div>
-
-              <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between text-gray-500 mb-0.5">
-                  <span className="text-[9px] font-semibold uppercase">Tenant Sub Profit</span>
-                  <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
-                </div>
-                <h3 className="text-lg font-bold text-gray-900">R {tenantSubProfit.toFixed(2)}</h3>
-                <p className="text-[9px] text-purple-600 mt-0.5">From tenant referrals</p>
               </div>
             </div>
 
             {/* Tenant Configuration (Limits & Fees) */}
             {subscriptionState === 'tenant' && (
-              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 space-y-4">
+              <div className="bg-white/80 backdrop-blur-md p-4 rounded-lg shadow-sm border border-white/40 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Wrench className="w-4 h-4 text-blue-600" />
@@ -1577,8 +1701,8 @@ export default function App() {
 
       {/* Full Screen Referrals Review Modal */}
       {showReferralsModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex flex-col p-2 md:p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-4xl mx-auto my-auto overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col p-2 md:p-4 overflow-y-auto">
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 w-full max-w-4xl mx-auto my-auto overflow-hidden flex flex-col max-h-[95vh]">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
               <div className="flex items-center gap-1.5">
                 <div className="p-1 bg-blue-100 text-blue-600 rounded-md">
@@ -1607,13 +1731,37 @@ export default function App() {
                   ? registeredUsers.filter(u => u.email !== currentEmail)
                   : registeredUsers.filter(u => u.referredBy === myCode);
 
-                if (relevantUsers.length === 0) {
-                  return <div className="text-center py-8 text-gray-500 text-xs">No referrals found yet.</div>;
-                }
+                const tenantCount = relevantUsers.filter(u => u.subscriptionState === 'tenant').length;
+                const userCount = relevantUsers.filter(u => u.subscriptionState === 'user').length;
+                
+                const tenantLimit = isMaster ? 1000 : 10;
+                const userLimit = isMaster ? 1000 : 100;
 
                 return (
-                  <div className="grid grid-cols-1 gap-4">
-                    {relevantUsers.map((user) => {
+                  <>
+                    {/* Limit Status Bar */}
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex flex-col items-center">
+                        <span className="text-[9px] font-bold text-emerald-600 uppercase">Tenant Referrals</span>
+                        <div className="text-lg font-black text-emerald-800">{tenantCount} / {tenantLimit}</div>
+                        <div className="w-full bg-emerald-200 h-1 rounded-full mt-1 overflow-hidden">
+                          <div className="bg-emerald-600 h-full transition-all" style={{ width: `${Math.min((tenantCount/tenantLimit)*100, 100)}%` }} />
+                        </div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex flex-col items-center">
+                        <span className="text-[9px] font-bold text-blue-600 uppercase">User Referrals</span>
+                        <div className="text-lg font-black text-blue-800">{userCount} / {userLimit}</div>
+                        <div className="w-full bg-blue-200 h-1 rounded-full mt-1 overflow-hidden">
+                          <div className="bg-blue-600 h-full transition-all" style={{ width: `${Math.min((userCount/userLimit)*100, 100)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {relevantUsers.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 text-xs">No referrals found yet.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4">
+                        {relevantUsers.map((user) => {
                       const refData = referrals.find(r => r.email === user.email);
                       return (
                         <div
@@ -1751,9 +1899,11 @@ export default function App() {
                       );
                     })}
                   </div>
-                );
-              })()}
-            </div>
+                )}
+                </>
+              );
+            })()}
+          </div>
 
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex justify-end">
               <button
@@ -1769,7 +1919,7 @@ export default function App() {
 
       {/* Seekers View */}
       {activeView === 'seekers' && (
-        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-6 md:p-10 pb-[calc(112px+env(safe-area-inset-bottom))]">
+        <div className="absolute inset-0 z-10 bg-transparent overflow-y-auto p-6 md:p-10 pb-[calc(112px+env(safe-area-inset-bottom))]">
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1823,30 +1973,38 @@ export default function App() {
 
       {/* Profile View */}
       {activeView === 'profile' && (
-        <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto p-6 md:p-10 pb-[calc(112px+env(safe-area-inset-bottom))]">
+        <div className="absolute inset-0 z-10 bg-transparent overflow-y-auto p-6 md:p-10 pb-[calc(112px+env(safe-area-inset-bottom))]">
           <div className="max-w-2xl mx-auto space-y-6">
-            <div className="flex items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-              <div className="flex items-center gap-4">
-                {selfieImage ? (
-                  <img src={selfieImage} alt="User Profile Logo" className="w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-blue-500 flex-shrink-0" />
-                ) : (
-                  <div className="w-20 h-20 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-2xl shadow-md flex-shrink-0">
-                    UP
+            <div className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/40">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+                <div className="flex flex-col items-center gap-2">
+                  {selfieImage ? (
+                    <img src={selfieImage} alt="User Profile Logo" className="w-24 h-24 rounded-2xl object-cover shadow-md border-2 border-blue-500 flex-shrink-0" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-3xl shadow-md flex-shrink-0">
+                      {editFirstName ? editFirstName[0].toUpperCase() : 'U'}
+                    </div>
+                  )}
+                  <div className="text-center">
+                    <p className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full inline-block">
+                      {currentEmail}
+                    </p>
                   </div>
-                )}
-                <div>
-                  <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">User Profile</h1>
+                </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">
+                    {editFirstName || editLastName ? `${editFirstName} ${editLastName}` : 'User Profile'}
+                  </h1>
                   <p className="text-sm font-semibold text-blue-600">
                     {subscriptionState === 'tenant' ? 'Tenant Sub (Active)' : subscriptionState === 'user' ? 'User Sub (Active)' : 'Not Activated'}
                   </p>
                   {locationName && (
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1 font-medium">
+                    <p className="text-sm text-gray-500 flex items-center justify-center sm:justify-start gap-1 mt-1 font-medium">
                       <MapPin className="w-4 h-4 text-blue-600" /> {locationName}
                     </p>
                   )}
                   <p className="text-xs text-gray-400 mt-1">ID & KYC Verified successfully</p>
                 </div>
-              </div>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setActiveHelp(helpContent.profile)}
@@ -1864,55 +2022,203 @@ export default function App() {
                     <span className="hidden sm:inline">Logout</span>
                   </button>
                 </div>
+              </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
-              <h3 className="text-base font-bold text-gray-900">Account Details</h3>
+            <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/40 p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-gray-900">Personal Information</h3>
+                {!isEditingProfile && (
+                  <button
+                    onClick={() => setIsEditingProfile(true)}
+                    className="text-xs font-bold text-blue-600 hover:underline"
+                  >
+                    Edit Profile
+                  </button>
+                )}
+              </div>
+
+              {isEditingProfile ? (
+                <form onSubmit={handleSaveProfile} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">First Name</label>
+                      <input
+                        type="text"
+                        value={editFirstName}
+                        onChange={(e) => setEditFirstName(e.target.value)}
+                        placeholder="e.g. John"
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Surname</label>
+                      <input
+                        type="text"
+                        value={editLastName}
+                        onChange={(e) => setEditLastName(e.target.value)}
+                        placeholder="e.g. Doe"
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Date of Birth</label>
+                      <div className="relative flex items-center">
+                        <Calendar className="absolute left-3 w-4 h-4 text-gray-400" />
+                        <input
+                          type="date"
+                          value={editDob}
+                          onChange={(e) => setEditDob(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Contact Number <span className="text-red-500">*</span></label>
+                      <div className="relative flex items-center">
+                        <Navigation className="absolute left-3 w-4 h-4 text-gray-400" />
+                        <input
+                          type="tel"
+                          required
+                          value={editContact}
+                          onChange={(e) => setEditContact(e.target.value)}
+                          placeholder="+27 12 345 6789"
+                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Location</label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1 flex items-center">
+                        <MapPin className="absolute left-3 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={editLocation}
+                          onChange={(e) => setEditLocation(e.target.value)}
+                          placeholder="Address or coordinates"
+                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAutoFillLocation}
+                        className="px-4 py-2.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all flex items-center gap-2 whitespace-nowrap"
+                        title="Set Automatically via GPS"
+                      >
+                        <Locate className="w-4 h-4" /> 
+                        <span className="hidden sm:inline">Auto-fill</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all"
+                    >
+                      Save Profile Changes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingProfile(false)}
+                      className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">First Name</p>
+                      <p className="text-xs font-bold text-gray-900">{editFirstName || '-'}</p>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Surname</p>
+                      <p className="text-xs font-bold text-gray-900">{editLastName || '-'}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Date of Birth</p>
+                      <p className="text-xs font-bold text-gray-900">{editDob || '-'}</p>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Contact Number</p>
+                      <p className="text-xs font-bold text-gray-900">{editContact || '-'}</p>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Location</p>
+                    <p className="text-xs font-bold text-gray-900">{editLocation || '-'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/40 p-6 space-y-4">
+              <h3 className="text-base font-bold text-gray-900">Subscription & KYC</h3>
               <div className="divide-y divide-gray-100 text-xs text-gray-700">
-                <div className="py-2.5 flex justify-between">
-                  <span className="font-medium text-gray-500">Subscription Plan</span>
-                  <span className="font-bold text-gray-900">
+                <div className="py-2.5 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-blue-500" />
+                    <span className="font-medium text-gray-500">Current Plan</span>
+                  </div>
+                  <span className={`font-bold px-2 py-0.5 rounded-full ${subscriptionState === 'tenant' ? 'bg-emerald-100 text-emerald-800' : subscriptionState === 'user' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                     {subscriptionState === 'tenant' ? 'Tenant Sub (R299,99/mo)' : subscriptionState === 'user' ? 'User Sub (R29,99/mo)' : 'None'}
                   </span>
                 </div>
-                <div className="py-2.5 flex justify-between">
-                  <span className="font-medium text-gray-500">ID Document</span>
-                  <span className="font-bold text-emerald-600">{idDocFile ? 'Verified & Attached' : 'Not Attached'}</span>
+                <div className="py-2.5 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    <span className="font-medium text-gray-500">ID Verification</span>
+                  </div>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" /> Verified
+                  </span>
                 </div>
-                <div className="py-2.5 flex justify-between">
-                  <span className="font-medium text-gray-500">Proof of Payment</span>
-                  <span className="font-bold text-emerald-600">{popFile ? 'Verified & Attached' : 'Not Attached'}</span>
-                </div>
-                <div className="py-2.5 flex justify-between">
-                  <span className="font-medium text-gray-500">Profile Logo Source</span>
-                  <span className="font-bold text-blue-600">{selfieImage ? 'Captured / Uploaded Selfie' : 'Default'}</span>
+                <div className="py-2.5 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-emerald-500" />
+                    <span className="font-medium text-gray-500">Proof of Payment</span>
+                  </div>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5" /> Approved
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               <button
                 onClick={() => {
                   setShowActivationModal(true);
                   setActivationStep('plan');
                 }}
-                className="flex-1 py-3 bg-white hover:bg-gray-50 text-blue-600 border border-blue-200 font-semibold rounded-xl text-xs transition-all shadow-sm"
+                className="flex-1 min-w-[200px] py-3 bg-white/80 hover:bg-white text-blue-600 border border-blue-200 font-bold rounded-xl text-xs transition-all shadow-sm"
               >
-                Change / Upgrade Subscription Plan
+                Upgrade Subscription
               </button>
               <button
                 onClick={handleToggleDisableAccount}
-                className="py-3 px-4 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-semibold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
+                className="py-3 px-4 bg-gray-50/80 hover:bg-gray-100 text-gray-700 border border-gray-200 font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
                 title="Disable Account"
               >
-                <PowerOff className="w-4 h-4 text-gray-500" /> Disable Account
+                <PowerOff className="w-4 h-4 text-gray-500" /> Disable
               </button>
               <button
                 onClick={handleResetApp}
-                className="py-3 px-4 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-semibold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
+                className="py-3 px-4 bg-red-50/80 hover:bg-red-100 text-red-600 border border-red-200 font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
                 title="Reset App"
               >
-                <RotateCcw className="w-4 h-4" /> Reset App
+                <RotateCcw className="w-4 h-4" /> Reset
               </button>
             </div>
           </div>
@@ -1926,10 +2232,28 @@ export default function App() {
           <>
             <button
               onClick={() => setActiveView('tenant-portal')}
-              className={`flex flex-col items-center gap-1 group focus:outline-none ${activeView === 'tenant-portal' ? 'text-emerald-600 font-bold' : 'text-gray-500 font-medium'}`}
+              className={`flex flex-col items-center gap-1 group focus:outline-none relative ${activeView === 'tenant-portal' ? 'text-emerald-600 font-bold' : 'text-gray-500 font-medium'}`}
               title="Tenant"
             >
-              <Building2 className="w-5 h-5 transition-transform group-hover:scale-110" />
+              <div className="relative">
+                <Building2 className="w-5 h-5 transition-transform group-hover:scale-110" />
+                {(() => {
+                  const myCode = getReferralCode(currentEmail);
+                  const isMaster = currentEmail === 'timegig2026@gmail.com';
+                  const refCount = isMaster 
+                    ? registeredUsers.length - 1 
+                    : registeredUsers.filter(u => u.referredBy === myCode).length;
+                  
+                  if (refCount > 0) {
+                    return (
+                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-white shadow-sm">
+                        {refCount > 99 ? '99+' : refCount}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
               <span className="text-[10px]">Tenant</span>
             </button>
 
@@ -2398,6 +2722,9 @@ export default function App() {
         </div>
       )}
 
+        </div>
+      )}
+
       {/* Help Modal Overlay */}
       {activeHelp && (
         <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
@@ -2433,14 +2760,15 @@ export default function App() {
           </div>
         </div>
       )}
+
       {/* Splash Screen Overlay */}
       {showSplash && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center animate-in fade-in duration-500">
-          {/* Background blurred map look */}
-          <div className="absolute inset-0 bg-blue-600/90 backdrop-blur-sm" />
-          <div className="relative z-10 text-white text-7xl font-black tracking-tighter drop-shadow-2xl animate-pulse flex flex-col items-center">
+          {/* Map background visible with blur */}
+          <div className="absolute inset-0 backdrop-blur-xl bg-white/10" />
+          <div className="relative z-10 text-blue-600 text-7xl font-black tracking-tighter drop-shadow-sm animate-pulse flex flex-col items-center">
             <span>TimeGiG</span>
-            <div className="h-1 w-24 bg-white rounded-full mt-2 opacity-50" />
+            <div className="h-1 w-24 bg-blue-600 rounded-full mt-2 opacity-20" />
           </div>
         </div>
       )}
