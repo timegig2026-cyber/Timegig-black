@@ -34,6 +34,7 @@ import {
   Check,
   FileText,
   Eye,
+  EyeOff,
   CheckCircle,
   XCircle,
   LogOut,
@@ -98,8 +99,14 @@ export default function App() {
     return localStorage.getItem('current_email') || '';
   });
 
-  const [authEmail, setAuthEmail] = useState<string>('');
-  const [authPassword, setAuthPassword] = useState<string>('');
+  const [authEmail, setAuthEmail] = useState<string>(() => {
+    return localStorage.getItem('last_auth_email') || '';
+  });
+  const [authPassword, setAuthPassword] = useState<string>(() => {
+    return localStorage.getItem('last_auth_password') || '';
+  });
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [feeUpdated, setFeeUpdated] = useState<boolean>(false);
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
   const [popupMessage, setPopupMessage] = useState<{ type: 'congrats' | 'welcome'; text: string } | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(true);
@@ -391,13 +398,13 @@ export default function App() {
     
     const approved = relevantReferrals.filter(r => r.status === 'Approved');
     
-    // Example profit: R10 per user sub, R100 per tenant sub
-    const userProfit = approved.filter(r => r.activatedPlan === 'user').length * 10;
-    const tenantProfit = approved.filter(r => r.activatedPlan === 'tenant').length * 100;
+    // Profits match the fees set by the tenant
+    const userProfit = approved.filter(r => r.activatedPlan === 'user').length * userSubFee;
+    const tenantProfit = approved.filter(r => r.activatedPlan === 'tenant').length * tenantSubFee;
     
     setUserSubProfit(userProfit);
     setTenantSubProfit(tenantProfit);
-  }, [referrals, currentEmail]);
+  }, [referrals, currentEmail, userSubFee, tenantSubFee]);
 
   // Effect to initialize map
   useEffect(() => {
@@ -797,6 +804,10 @@ export default function App() {
 
         setSubscriptionState(selectedPlan);
         
+        // Play congratulations sound
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3');
+        audio.play().catch(e => console.log('Sound play blocked:', e));
+
         const today = new Date();
         const thirtyDaysLater = new Date(today);
         thirtyDaysLater.setDate(today.getDate() + 30);
@@ -902,6 +913,9 @@ export default function App() {
       setRegisteredUsers((prev) => [...prev, newAccount]);
     }
 
+    localStorage.setItem('last_auth_email', authEmail);
+    localStorage.setItem('last_auth_password', authPassword);
+    
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
     setPopupMessage({ type: 'congrats', text: 'Congratulations! Your account has been successfully created.' });
@@ -929,6 +943,9 @@ export default function App() {
       setSelfieImage(found.selfieImage);
     }
 
+    localStorage.setItem('last_auth_email', authEmail);
+    localStorage.setItem('last_auth_password', authPassword);
+
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
     setPopupMessage({ type: 'welcome', text: `Welcome Back, ${authEmail || 'User'}!` });
@@ -940,15 +957,6 @@ export default function App() {
     );
   };
 
-  if (showSplash) {
-    return (
-      <div className="fixed inset-0 z-[100] bg-blue-600 flex items-center justify-center animate-in fade-in duration-500">
-        <div className="text-white text-6xl font-black tracking-tighter drop-shadow-2xl animate-pulse">
-          TimeGiG
-        </div>
-      </div>
-    );
-  }
 
   // If user is not authenticated (login or signup screen)
   if (authMode !== 'authenticated') {
@@ -1001,13 +1009,20 @@ export default function App() {
                 <div className="relative flex items-center">
                   <Lock className="absolute left-3 w-4 h-4 text-gray-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -1064,13 +1079,20 @@ export default function App() {
                 <div className="relative flex items-center">
                   <Lock className="absolute left-3 w-4 h-4 text-gray-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -1427,26 +1449,44 @@ export default function App() {
 
                 <div className="grid grid-cols-2 gap-4">
                   {/* Fees Configuration */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Referral User Fee (R)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={userSubFee}
-                      onChange={(e) => setUserSubFee(Number(e.target.value))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Referral Tenant Fee (R)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={tenantSubFee}
-                      onChange={(e) => setTenantSubFee(Number(e.target.value))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
+                    <div className="relative space-y-1.5">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Referral User Fee (R)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={userSubFee}
+                        onChange={(e) => {
+                          setUserSubFee(Number(e.target.value));
+                          setFeeUpdated(true);
+                          setTimeout(() => setFeeUpdated(false), 2000);
+                        }}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                      {feeUpdated && (
+                        <div className="absolute -top-1 right-0 text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded flex items-center gap-0.5 animate-bounce">
+                          <CheckCircle2 className="w-2 h-2" /> Success
+                        </div>
+                      )}
+                    </div>
+                    <div className="relative space-y-1.5">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Referral Tenant Fee (R)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={tenantSubFee}
+                        onChange={(e) => {
+                          setTenantSubFee(Number(e.target.value));
+                          setFeeUpdated(true);
+                          setTimeout(() => setFeeUpdated(false), 2000);
+                        }}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                      {feeUpdated && (
+                        <div className="absolute -top-1 right-0 text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded flex items-center gap-0.5 animate-bounce">
+                          <CheckCircle2 className="w-2 h-2" /> Success
+                        </div>
+                      )}
+                    </div>
 
                   {/* Bank Details Configuration */}
                   <div className="col-span-2 pt-2 border-t border-gray-100">
@@ -2390,6 +2430,17 @@ export default function App() {
                 Got it, thanks!
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Splash Screen Overlay */}
+      {showSplash && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center animate-in fade-in duration-500">
+          {/* Background blurred map look */}
+          <div className="absolute inset-0 bg-blue-600/90 backdrop-blur-sm" />
+          <div className="relative z-10 text-white text-7xl font-black tracking-tighter drop-shadow-2xl animate-pulse flex flex-col items-center">
+            <span>TimeGiG</span>
+            <div className="h-1 w-24 bg-white rounded-full mt-2 opacity-50" />
           </div>
         </div>
       )}
