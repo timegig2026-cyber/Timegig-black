@@ -249,6 +249,20 @@ export default function App() {
     return saved ? Number(saved) : 299.99;
   });
 
+  // Bank Details (Settable by each Tenant for their payouts)
+  const [bankName, setBankName] = useState<string>(() => {
+    return localStorage.getItem(`bank_name_${currentEmail}`) || '';
+  });
+  const [accountHolder, setAccountHolder] = useState<string>(() => {
+    return localStorage.getItem(`acc_holder_${currentEmail}`) || '';
+  });
+  const [accountNumber, setAccountNumber] = useState<string>(() => {
+    return localStorage.getItem(`acc_num_${currentEmail}`) || '';
+  });
+  const [branchCode, setBranchCode] = useState<string>(() => {
+    return localStorage.getItem(`branch_code_${currentEmail}`) || '';
+  });
+
   useEffect(() => {
     localStorage.setItem('tenant_limit_config', tenantLimitConfig.toString());
   }, [tenantLimitConfig]);
@@ -268,6 +282,30 @@ export default function App() {
       localStorage.setItem(`tenant_fee_${currentEmail}`, tenantSubFee.toString());
     }
   }, [tenantSubFee, currentEmail]);
+
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`bank_name_${currentEmail}`, bankName);
+    }
+  }, [bankName, currentEmail]);
+
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`acc_holder_${currentEmail}`, accountHolder);
+    }
+  }, [accountHolder, currentEmail]);
+
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`acc_num_${currentEmail}`, accountNumber);
+    }
+  }, [accountNumber, currentEmail]);
+
+  useEffect(() => {
+    if (currentEmail) {
+      localStorage.setItem(`branch_code_${currentEmail}`, branchCode);
+    }
+  }, [branchCode, currentEmail]);
 
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
@@ -1410,10 +1448,59 @@ export default function App() {
                     />
                   </div>
 
+                  {/* Bank Details Configuration */}
+                  <div className="col-span-2 pt-2 border-t border-gray-100">
+                    <h4 className="text-[10px] font-bold text-gray-900 uppercase mb-3 flex items-center gap-2">
+                      <CreditCard className="w-3 h-3 text-emerald-600" /> Payout Details
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Bank Name</label>
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder="e.g. FNB, ABSA"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Account Holder</label>
+                        <input
+                          type="text"
+                          value={accountHolder}
+                          onChange={(e) => setAccountHolder(e.target.value)}
+                          placeholder="Full Name"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Account Number</label>
+                        <input
+                          type="text"
+                          value={accountNumber}
+                          onChange={(e) => setAccountNumber(e.target.value)}
+                          placeholder="123456789"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase">Branch Code</label>
+                        <input
+                          type="text"
+                          value={branchCode}
+                          onChange={(e) => setBranchCode(e.target.value)}
+                          placeholder="e.g. 250655"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Limits Configuration (Master Only) */}
                   {currentEmail === 'timegig2026@gmail.com' && (
                     <>
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 col-span-1 pt-2">
                         <label className="text-[10px] font-bold text-gray-500 uppercase">Global Tenant Limit</label>
                         <input
                           type="number"
@@ -1422,7 +1509,7 @@ export default function App() {
                           className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 col-span-1 pt-2">
                         <label className="text-[10px] font-bold text-gray-500 uppercase">Global User Limit</label>
                         <input
                           type="number"
@@ -1934,13 +2021,38 @@ export default function App() {
                 const activeUserFee = localStorage.getItem(`user_fee_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? '29.99' : '29.99');
                 const activeTenantFee = localStorage.getItem(`tenant_fee_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? '299.99' : '299.99');
 
+                // Referrer Bank Details
+                const refBankName = localStorage.getItem(`bank_name_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? 'TimeGiG Central Bank' : 'Contact Referrer');
+                const refAccHolder = localStorage.getItem(`acc_holder_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? 'TimeGiG Pty Ltd' : 'Not Provided');
+                const refAccNum = localStorage.getItem(`acc_num_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? '9876543210' : 'Not Provided');
+                const refBranch = localStorage.getItem(`branch_code_${referrerEmail}`) || (referrerEmail === 'timegig2026@gmail.com' ? '250655' : 'Not Provided');
+
                 return (
                   <div className="space-y-6">
                     <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-2.5">
                       <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
                       <p className="text-[11px] text-blue-700 leading-tight">
-                        You were referred by <span className="font-bold">{referrerEmail}</span>. The subscription fees below are set by your referring tenant.
+                        You were referred by <span className="font-bold">{referrerEmail}</span>. The subscription fees and payment details below are set by your referring tenant.
                       </p>
+                    </div>
+
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                      <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs uppercase">
+                        <CreditCard className="w-4 h-4" /> Payment Information
+                      </div>
+                      <p className="text-[11px] text-emerald-800 leading-tight">
+                        Please transfer the monthly subscription fee to the following bank account before proceeding to upload your Proof of Payment:
+                      </p>
+                      <div className="grid grid-cols-2 gap-y-2 text-[11px]">
+                        <div className="text-gray-500 font-medium">Bank Name:</div>
+                        <div className="font-bold text-gray-900">{refBankName}</div>
+                        <div className="text-gray-500 font-medium">Account Holder:</div>
+                        <div className="font-bold text-gray-900">{refAccHolder}</div>
+                        <div className="text-gray-500 font-medium">Account Number:</div>
+                        <div className="font-bold text-gray-900">{refAccNum}</div>
+                        <div className="text-gray-500 font-medium">Branch Code:</div>
+                        <div className="font-bold text-gray-900">{refBranch}</div>
+                      </div>
                     </div>
 
                     <p className="text-sm text-gray-600">
